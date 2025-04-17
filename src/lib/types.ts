@@ -13,7 +13,7 @@ export interface SafetyObservation {
   likelihood: 'unlikely' | 'possible' | 'likely' | 'very-likely';
   status: 'open' | 'closed';
   corrective_action: boolean;
-  supporting_image?: string;
+  supporting_image?: string | File;
   created_at?: string;
   created_by?: string;
   selected_categories?: string[];
@@ -49,13 +49,37 @@ export interface SafetyCategory {
 }
 
 export interface MonthlySummary {
-  id: string;
   month: string;
   total_observations: number;
   observation_types: Record<string, number>;
   action_status: Record<string, number>;
   risk_levels: Record<string, number>;
-  trending_data: Record<string, any>;
+  trending_data: {
+    categories: Record<string, number>;
+    avg_response_time: number;
+  };
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Report {
+  id: number;
+  subject: string;
+  project: string;
+  company: string;
+  submitter_name: string;
+  date: string;
+  time: string;
+  location: string;
+  department: string;
+  description: string;
+  report_group: string;
+  consequences: string;
+  likelihood: string;
+  status: string;
+  safety_categories: SafetyCategory[];
+  action_plans: ActionPlan[];
+  supporting_image: string | null;
   created_at: string;
   updated_at: string;
 }

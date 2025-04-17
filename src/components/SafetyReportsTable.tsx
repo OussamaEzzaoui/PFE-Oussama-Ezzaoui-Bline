@@ -17,6 +17,14 @@ interface SafetyReport {
   created_at: string;
   projects: { name: string };
   companies: { name: string };
+  action_plans: {
+    id: string;
+    action: string;
+    due_date: string;
+    responsible_person: string;
+    follow_up_contact: string;
+    status: string;
+  }[];
 }
 
 interface FilterOptions {
@@ -119,7 +127,15 @@ export function SafetyReportsTable() {
           status,
           created_at,
           projects(name),
-          companies(name)
+          companies(name),
+          action_plans(
+            id,
+            action,
+            due_date,
+            responsible_person,
+            follow_up_contact,
+            status
+          )
         `)
         .order(sortConfig.key, { ascending: sortConfig.direction === 'asc' });
 
@@ -146,7 +162,15 @@ export function SafetyReportsTable() {
 
       if (fetchError) throw fetchError;
 
-      setReports(data || []);
+      // Transform the data to include action plans
+      const transformedData = (data || []).map(report => ({
+        ...report,
+        projects: report.projects[0] || { name: '' },
+        companies: report.companies[0] || { name: '' },
+        action_plans: report.action_plans || []
+      }));
+
+      setReports(transformedData);
       setTotalPages(Math.ceil((count || 0) / reportsPerPage));
     } catch (err) {
       setError('Failed to load reports');
@@ -172,6 +196,15 @@ export function SafetyReportsTable() {
     if (!reportToDelete) return;
 
     try {
+      // First delete all action plans associated with the report
+      const { error: actionPlansError } = await supabase
+        .from('action_plans')
+        .delete()
+        .eq('observation_id', reportToDelete.id);
+
+      if (actionPlansError) throw actionPlansError;
+
+      // Then delete the report itself
       const { error: deleteError } = await supabase
         .from('observation_details')
         .delete()

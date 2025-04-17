@@ -6,6 +6,10 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing Supabase environment variables:', {
+    url: supabaseUrl ? 'present' : 'missing',
+    key: supabaseAnonKey ? 'present' : 'missing'
+  });
   throw new Error('Missing Supabase environment variables');
 }
 
@@ -15,6 +19,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: false,
     storage: localStorage
+  }
+});
+
+// Add connection test
+supabase.auth.getSession().then(({ data: { session }, error }) => {
+  if (error) {
+    console.error('Supabase connection error:', error);
+  } else {
+    console.log('Supabase connection successful');
   }
 });
 

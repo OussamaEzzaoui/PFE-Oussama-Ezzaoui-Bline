@@ -9,12 +9,12 @@ import toast from 'react-hot-toast';
 import type { SafetyCategory, Project, Company } from '../lib/types';
 
 interface ActionPlan {
+  id?: string;
   action: string;
-  dueDate: string;
-  responsiblePerson: string;
-  followUpContact: string;
+  due_date: string;
+  responsible_person: string;
+  follow_up_contact: string;
   status: 'open' | 'closed';
-  supporting_image?: string;
 }
 
 interface ValidationErrors {
@@ -31,9 +31,9 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   const [actionPlans, setActionPlans] = useState<ActionPlan[]>([]);
   const [currentActionPlan, setCurrentActionPlan] = useState<ActionPlan>({
     action: '',
-    dueDate: '',
-    responsiblePerson: '',
-    followUpContact: '',
+    due_date: '',
+    responsible_person: '',
+    follow_up_contact: '',
     status: 'open'
   });
   const [actionPlanRequired, setActionPlanRequired] = useState('no');
@@ -64,6 +64,8 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [editingActionPlanIndex, setEditingActionPlanIndex] = useState<number | null>(null);
+  const [editedActionPlan, setEditedActionPlan] = useState<ActionPlan | null>(null);
 
   const handleCategorySelect = (categoryId: string) => {
     setSelectedCategories(prev => 
@@ -155,36 +157,55 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   };
 
   const handleSaveActionPlan = async (addAnother: boolean) => {
-    if (!currentActionPlan.action || 
-        !currentActionPlan.dueDate || 
-        !currentActionPlan.responsiblePerson || 
-        !currentActionPlan.followUpContact) {
+    if (!currentActionPlan.action || !currentActionPlan.due_date || 
+        !currentActionPlan.responsible_person || !currentActionPlan.follow_up_contact) {
       toast.error('Please fill in all action plan fields');
       return;
     }
 
-    setActionPlans([...actionPlans, currentActionPlan]);
-    toast.success('Action plan saved');
+    setActionPlans(prev => [...prev, currentActionPlan]);
+    setCurrentActionPlan({
+      action: '',
+      due_date: '',
+      responsible_person: '',
+      follow_up_contact: '',
+      status: 'open'
+    });
 
-    if (addAnother) {
-      setCurrentActionPlan({
-        action: '',
-        dueDate: '',
-        responsiblePerson: '',
-        followUpContact: '',
-        status: 'open'
-      });
+    if (!addAnother) {
+      setActionPlanRequired('no');
     }
+  };
+
+  const handleEditActionPlan = (index: number) => {
+    setEditingActionPlanIndex(index);
+    setEditedActionPlan(actionPlans[index]);
+  };
+
+  const handleCancelEditActionPlan = () => {
+    setEditingActionPlanIndex(null);
+    setEditedActionPlan(null);
+  };
+
+  const handleSaveEditedActionPlan = () => {
+    if (editingActionPlanIndex === null || !editedActionPlan) return;
+
+    setActionPlans(prev => {
+      const newPlans = [...prev];
+      newPlans[editingActionPlanIndex] = editedActionPlan;
+      return newPlans;
+    });
+
+    setEditingActionPlanIndex(null);
+    setEditedActionPlan(null);
+  };
+
+  const handleDeleteActionPlan = (index: number) => {
+    setActionPlans(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
@@ -204,7 +225,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
       }
 
       // Save observation
-      const { data: savedReport, error: observationError } = await supabase
+      const { data: savedObservation, error: observationError } = await supabase
         .from('observation_details')
         .insert({
           project_id: project,
@@ -220,63 +241,49 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
           likelihood,
           status,
           subject,
-          corrective_action: actionPlans.length > 0,
-          supporting_image: imagePath || null,
+          supporting_image: imagePath,
           created_by: user.id
         })
         .select()
         .single();
 
-      if (observationError) {
-        console.error('Observation Error:', observationError);
-        throw new Error('Failed to save observation');
-      }
+      if (observationError) throw observationError;
 
-      if (!savedReport) {
-        throw new Error('No report data returned after save');
-      }
-
-      // Save selected categories
+      // Save categories
       if (selectedCategories.length > 0) {
         const { error: categoriesError } = await supabase
           .from('observation_categories')
           .insert(
             selectedCategories.map(categoryId => ({
-              observation_id: savedReport.id,
+              observation_id: savedObservation.id,
               category_id: categoryId
             }))
           );
 
-        if (categoriesError) {
-          console.error('Categories Error:', categoriesError);
-          throw new Error('Failed to save categories');
-        }
+        if (categoriesError) throw categoriesError;
       }
 
-      // Save action plans if any
+      // Save action plans
       if (actionPlans.length > 0) {
         const { error: actionPlansError } = await supabase
           .from('action_plans')
           .insert(
             actionPlans.map(plan => ({
-              observation_id: savedReport.id,
+              observation_id: savedObservation.id,
               action: plan.action,
-              due_date: plan.dueDate,
-              responsible_person: plan.responsiblePerson,
-              follow_up_contact: plan.followUpContact,
+              due_date: plan.due_date,
+              responsible_person: plan.responsible_person,
+              follow_up_contact: plan.follow_up_contact,
               status: plan.status,
               created_by: user.id
             }))
           );
 
-        if (actionPlansError) {
-          console.error('Action Plans Error:', actionPlansError);
-          throw new Error('Failed to save action plans');
-        }
+        if (actionPlansError) throw actionPlansError;
       }
 
-      toast.success('Safety report saved successfully!');
-      navigate(`/reports/${savedReport.id}`);
+      toast.success('Report saved successfully');
+      navigate('/');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save report';
       setError(errorMessage);
@@ -682,102 +689,6 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
 
                 {actionPlanRequired === 'yes' && (
                   <div className="space-y-6">
-                    {/* Action Description */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <lucide.FileText className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Action</label>
-                      </div>
-                      <textarea
-                        value={currentActionPlan.action}
-                        onChange={(e) => setCurrentActionPlan({
-                          ...currentActionPlan,
-                          action: e.target.value
-                        })}
-                        placeholder="Enter a detailed description of the required action"
-                        rows={4}
-                        required
-                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
-                      />
-                    </div>
-
-                    {/* Due Date */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <lucide.Calendar className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Due Date</label>
-                      </div>
-                      <input
-                        type="date"
-                        value={currentActionPlan.dueDate}
-                        onChange={(e) => setCurrentActionPlan({
-                          ...currentActionPlan,
-                          dueDate: e.target.value
-                        })}
-                        min={new Date().toISOString().split('T')[0]}
-                        required
-                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    {/* Responsible Person */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <lucide.User className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Responsible Person</label>
-                      </div>
-                      <input
-                        type="text"
-                        value={currentActionPlan.responsiblePerson}
-                        onChange={(e) => setCurrentActionPlan({
-                          ...currentActionPlan,
-                          responsiblePerson: e.target.value
-                        })}
-                        placeholder="Enter name of person responsible"
-                        required
-                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    {/* Follow-up Contact */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <lucide.UserCheck className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Follow-up Contact</label>
-                      </div>
-                      <input
-                        type="text"
-                        value={currentActionPlan.followUpContact}
-                        onChange={(e) => setCurrentActionPlan({
-                          ...currentActionPlan,
-                          followUpContact: e.target.value
-                        })}
-                        placeholder="Enter name of person monitoring progress"
-                        required
-                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    {/* Action Plan Buttons */}
-                    <div className="flex gap-4">
-                      <button
-                        type="button"
-                        onClick={() => handleSaveActionPlan(false)}
-                        className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <lucide.Save className="h-5 w-5" />
-                        Save Action Plan
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveActionPlan(true)}
-                        className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <lucide.Plus className="h-5 w-5" />
-                        Save & Add Another
-                      </button>
-                    </div>
-
                     {/* List of Saved Action Plans */}
                     {actionPlans.length > 0 && (
                       <div className="mt-8">
@@ -788,22 +699,122 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                               key={index}
                               className="p-4 border border-gray-200 rounded-lg"
                             >
-                              <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-medium text-gray-900">Action Plan #{index + 1}</h4>
-                                <span className={`px-2 py-1 rounded-full text-sm ${
-                                  plan.status === 'open'
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {plan.status.charAt(0).toUpperCase() + plan.status.slice(1)}
-                                </span>
-                              </div>
-                              <p className="text-gray-600 mb-2">{plan.action}</p>
-                              <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">
-                                <div>Due Date: {plan.dueDate}</div>
-                                <div>Responsible: {plan.responsiblePerson}</div>
-                                <div>Follow-up: {plan.followUpContact}</div>
-                              </div>
+                              {editingActionPlanIndex === index ? (
+                                <div className="space-y-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Action
+                                    </label>
+                                    <textarea
+                                      value={editedActionPlan?.action}
+                                      onChange={(e) => setEditedActionPlan({
+                                        ...editedActionPlan!,
+                                        action: e.target.value
+                                      })}
+                                      rows={4}
+                                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Due Date
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={editedActionPlan?.due_date}
+                                      onChange={(e) => setEditedActionPlan({
+                                        ...editedActionPlan!,
+                                        due_date: e.target.value
+                                      })}
+                                      min={new Date().toISOString().split('T')[0]}
+                                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Responsible Person
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editedActionPlan?.responsible_person}
+                                      onChange={(e) => setEditedActionPlan({
+                                        ...editedActionPlan!,
+                                        responsible_person: e.target.value
+                                      })}
+                                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Follow-up Contact
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editedActionPlan?.follow_up_contact}
+                                      onChange={(e) => setEditedActionPlan({
+                                        ...editedActionPlan!,
+                                        follow_up_contact: e.target.value
+                                      })}
+                                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                    />
+                                  </div>
+
+                                  <div className="flex justify-between gap-4">
+                                    <button
+                                      type="button"
+                                      onClick={handleCancelEditActionPlan}
+                                      className="flex-1 py-2 px-4 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleSaveEditedActionPlan}
+                                      className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                    >
+                                      Save Changes
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex justify-between items-start mb-2">
+                                    <h4 className="font-medium text-gray-900">Action Plan #{index + 1}</h4>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`px-2 py-1 rounded-full text-sm ${
+                                        plan.status === 'open'
+                                          ? 'bg-green-100 text-green-800'
+                                          : 'bg-gray-100 text-gray-800'
+                                      }`}>
+                                        {plan.status.charAt(0).toUpperCase() + plan.status.slice(1)}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleEditActionPlan(index)}
+                                        className="p-1 text-gray-500 hover:text-gray-700"
+                                      >
+                                        <lucide.Edit2 className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteActionPlan(index)}
+                                        className="p-1 text-red-500 hover:text-red-700"
+                                      >
+                                        <lucide.Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <p className="text-gray-600 mb-2">{plan.action}</p>
+                                  <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">
+                                    <div>Due Date: {plan.due_date}</div>
+                                    <div>Responsible: {plan.responsible_person}</div>
+                                    <div>Follow-up: {plan.follow_up_contact}</div>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           ))}
                         </div>

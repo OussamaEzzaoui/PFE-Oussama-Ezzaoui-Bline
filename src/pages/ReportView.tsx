@@ -4,28 +4,17 @@ import * as lucide from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
 import { ExportReport } from '../components/ExportReport';
+import { SafetyCategories } from '../components/SafetyCategories';
 import toast from 'react-hot-toast';
+import type { SafetyCategory, Project, Company, Report } from '../lib/types';
 
-interface Report {
-  id: string;
-  project_id: string;
-  company_id: string;
-  submitter_name: string;
-  date: string;
-  time: string;
-  department: string;
-  location: string;
-  description: string;
-  report_group: string;
-  consequences: string;
-  likelihood: string;
-  status: string;
-  supporting_image: string | null;
-  created_at: string;
-  updated_at: string;
-  created_by: string;
-  projects: { name: string };
-  companies: { name: string };
+interface ActionPlan {
+  id?: string;
+  action: string;
+  due_date: string;
+  responsible_person: string;
+  follow_up_contact: string;
+  status: 'open' | 'closed';
 }
 
 export function ReportView() {
@@ -34,17 +23,101 @@ export function ReportView() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedReport, setEditedReport] = useState<Partial<Report>>({});
-  const [showExport, setShowExport] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [safetyCategories, setSafetyCategories] = useState<SafetyCategory[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [actionPlans, setActionPlans] = useState<ActionPlan[]>([]);
+  const [currentActionPlan, setCurrentActionPlan] = useState<ActionPlan>({
+    action: '',
+    due_date: '',
+    responsible_person: '',
+    follow_up_contact: '',
+    status: 'open'
+  });
+  const [actionPlanRequired, setActionPlanRequired] = useState('no');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState('');
+
+  // Form state
+  const [project, setProject] = useState('');
+  const [company, setCompany] = useState('');
+  const [submitterName, setSubmitterName] = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [department, setDepartment] = useState('');
+  const [location, setLocation] = useState('');
+  const [description, setDescription] = useState('');
+  const [reportGroup, setReportGroup] = useState('');
+  const [consequences, setConsequences] = useState('');
+  const [likelihood, setLikelihood] = useState('');
+  const [status, setStatus] = useState('open');
+  const [subject, setSubject] = useState<'SOR' | 'SOP' | 'RES'>('SOR');
+
+  const [editingActionPlanIndex, setEditingActionPlanIndex] = useState<number | null>(null);
+  const [editedActionPlan, setEditedActionPlan] = useState<ActionPlan | null>(null);
+
+  // Add a new state to track deleted action plan IDs
+  const [deletedActionPlanIds, setDeletedActionPlanIds] = useState<string[]>([]);
+
+  // Add new state for pending action plan changes
+  const [pendingActionPlans, setPendingActionPlans] = useState<ActionPlan[]>([]);
+  const [isActionPlansLoaded, setIsActionPlansLoaded] = useState(false);
 
   useEffect(() => {
     loadReport();
+    loadSafetyCategories();
+    loadProjects();
+    loadCompanies();
   }, [id]);
+
+  const loadSafetyCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('safety_categories')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setSafetyCategories(data);
+    } catch (err) {
+      console.error('Error loading safety categories:', err);
+    }
+  };
+
+  const loadProjects = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setProjects(data);
+    } catch (err) {
+      console.error('Error loading projects:', err);
+    }
+  };
+
+  const loadCompanies = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setCompanies(data);
+    } catch (err) {
+      console.error('Error loading companies:', err);
+    }
+  };
 
   const loadReport = async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('observation_details')
         .select(`
@@ -56,49 +129,309 @@ export function ReportView() {
         .single();
 
       if (error) throw error;
-      setReport(data);
-      setEditedReport(data);
+
+      // Load selected categories
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('observation_categories')
+        .select('category_id')
+        .eq('observation_id', id);
+
+      if (categoriesError) throw categoriesError;
+
+      // Load action plans
+      const { data: actionPlansData, error: actionPlansError } = await supabase
+        .from('action_plans')
+        .select('*')
+        .eq('observation_id', id);
+
+      if (actionPlansError) throw actionPlansError;
+
+      // Transform the data to match the Report interface
+      const transformedReport: Report = {
+        id: data.id,
+        subject: data.subject,
+        project: data.projects.name,
+        company: data.companies.name,
+        submitter_name: data.submitter_name,
+        date: data.date,
+        time: data.time,
+        location: data.location,
+        department: data.department,
+        description: data.description,
+        report_group: data.report_group,
+        consequences: data.consequences,
+        likelihood: data.likelihood,
+        status: data.status,
+        safety_categories: categoriesData?.map(c => ({ 
+          id: c.category_id, 
+          name: '', 
+          description: '', 
+          icon: 'default',
+          created_at: '', 
+          updated_at: '' 
+        })) || [],
+        action_plans: actionPlansData || [],
+        supporting_image: data.supporting_image,
+        created_at: data.created_at,
+        updated_at: data.updated_at
+      };
+
+      setReport(transformedReport);
+      setSelectedCategories(categoriesData?.map(c => c.category_id) || []);
+      // Initialize both action plan states
+      setActionPlans(actionPlansData || []);
+      setPendingActionPlans(actionPlansData || []);
+      setIsActionPlansLoaded(true);
+      setActionPlanRequired(actionPlansData?.length > 0 ? 'yes' : 'no');
+
+      // Set form state
+      setProject(data.project_id);
+      setCompany(data.company_id);
+      setSubmitterName(data.submitter_name);
+      setDate(data.date);
+      setTime(data.time);
+      setDepartment(data.department);
+      setLocation(data.location);
+      setDescription(data.description);
+      setReportGroup(data.report_group);
+      setConsequences(data.consequences);
+      setLikelihood(data.likelihood);
+      setStatus(data.status);
+      setSubject(data.subject);
+
+      if (data.supporting_image) {
+        setImagePreview(`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${data.supporting_image}`);
+      }
     } catch (err) {
       setError('Failed to load report');
+      console.error('Error loading report:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEdit = () => {
-    setIsEditing(true);
+  const handleCategorySelect = (categoryId: string) => {
+    setSelectedCategories(prev => {
+      if (prev.includes(categoryId)) {
+        return prev.filter(id => id !== categoryId);
+      } else {
+        return [...prev, categoryId];
+      }
+    });
   };
 
-  const handleCancel = () => {
-    setIsEditing(false);
-    setEditedReport(report || {});
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  const handleSave = async () => {
-    if (!report || !editedReport) return;
+  const handleAddActionPlan = () => {
+    if (actionPlans.length >= 10) {
+      toast.error('Maximum of 10 action plans allowed per report');
+      return;
+    }
+    const newActionPlan: ActionPlan = {
+      id: `temp-${Date.now()}`,
+      action: '',
+      due_date: '',
+      responsible_person: '',
+      follow_up_contact: '',
+      status: 'open'
+    };
+    setActionPlans([...actionPlans, newActionPlan]);
+  };
+
+  const handleDeleteActionPlan = (index: number) => {
+    if (!window.confirm('Are you sure you want to delete this action plan? This action cannot be undone.')) {
+      return;
+    }
+    
+    const planToDelete = actionPlans[index];
+    if (planToDelete.id && !planToDelete.id.startsWith('temp-')) {
+      setDeletedActionPlanIds(prev => [...prev, planToDelete.id!]);
+    }
+    
+    const updatedActionPlans = actionPlans.filter((_, i) => i !== index);
+    setActionPlans(updatedActionPlans);
+    toast.success('Action plan deleted successfully');
+  };
+
+  const handleSaveActionPlan = async (addAnother: boolean) => {
+    if (!currentActionPlan.action || !currentActionPlan.due_date || 
+        !currentActionPlan.responsible_person || !currentActionPlan.follow_up_contact) {
+      toast.error('Please fill in all action plan fields');
+      return;
+    }
+
+    // Add to pending action plans
+    const newActionPlan = {
+      ...currentActionPlan,
+      id: `temp-${Date.now()}`
+    };
+
+    setPendingActionPlans(prev => [...prev, newActionPlan]);
+    
+    // Reset the form
+    setCurrentActionPlan({
+      action: '',
+      due_date: '',
+      responsible_person: '',
+      follow_up_contact: '',
+      status: 'open'
+    });
+
+    if (!addAnother) {
+      setActionPlanRequired('no');
+    }
+  };
+
+  const handleEditActionPlan = (index: number) => {
+    setEditingActionPlanIndex(index);
+    setEditedActionPlan(actionPlans[index]);
+  };
+
+  const handleCancelEditActionPlan = () => {
+    setEditingActionPlanIndex(null);
+    setEditedActionPlan(null);
+  };
+
+  const handleSaveEditedActionPlan = () => {
+    if (editingActionPlanIndex !== null && editedActionPlan) {
+      const updatedActionPlans = [...actionPlans];
+      updatedActionPlans[editingActionPlanIndex] = {
+        ...editedActionPlan,
+        action: editedActionPlan.action,
+        due_date: editedActionPlan.due_date,
+        responsible_person: editedActionPlan.responsible_person,
+        follow_up_contact: editedActionPlan.follow_up_contact,
+        status: editedActionPlan.status
+      };
+      setActionPlans(updatedActionPlans);
+      setEditingActionPlanIndex(null);
+      setEditedActionPlan(null);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
 
     try {
       setSaving(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // First delete the action plans that were marked for deletion
+      if (deletedActionPlanIds.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('action_plans')
+          .delete()
+          .in('id', deletedActionPlanIds);
+
+        if (deleteError) throw deleteError;
+      }
+
+      // Upload new image if exists
+      let imagePath = report?.supporting_image || '';
+      if (imageFile) {
+        const { data: imageData, error: imageError } = await supabase.storage
+          .from('safety-images')
+          .upload(`${Date.now()}-${imageFile.name}`, imageFile);
+
+        if (imageError) throw imageError;
+        imagePath = imageData.path;
+      }
+
+      // Update observation details
       const { error: updateError } = await supabase
         .from('observation_details')
         .update({
-          description: editedReport.description,
-          location: editedReport.location,
-          department: editedReport.department,
-          consequences: editedReport.consequences,
-          likelihood: editedReport.likelihood,
-          status: editedReport.status,
+          project_id: project,
+          company_id: company,
+          submitter_name: submitterName,
+          date,
+          time,
+          department,
+          location,
+          description,
+          report_group: reportGroup,
+          consequences,
+          likelihood,
+          status,
+          subject,
+          supporting_image: imagePath,
+          updated_at: new Date().toISOString()
         })
-        .eq('id', report.id);
+        .eq('id', id);
 
       if (updateError) throw updateError;
 
-      await loadReport();
-      setIsEditing(false);
+      // Update categories
+      if (selectedCategories.length > 0) {
+        // Delete existing categories
+        const { error: deleteCategoriesError } = await supabase
+          .from('observation_categories')
+          .delete()
+          .eq('observation_id', id);
+
+        if (deleteCategoriesError) throw deleteCategoriesError;
+
+        // Insert new categories
+        const { error: insertCategoriesError } = await supabase
+          .from('observation_categories')
+          .insert(
+            selectedCategories.map(categoryId => ({
+              observation_id: id,
+              category_id: categoryId
+            }))
+          );
+
+        if (insertCategoriesError) throw insertCategoriesError;
+      }
+
+      // Handle action plans
+      // First delete all existing action plans for this observation
+      const { error: deleteAllError } = await supabase
+        .from('action_plans')
+        .delete()
+        .eq('observation_id', id);
+
+      if (deleteAllError) throw deleteAllError;
+
+      // Then insert all current action plans
+      if (actionPlans.length > 0) {
+        const actionPlansToInsert = actionPlans.map(plan => {
+          const { id: _, ...planWithoutId } = plan;
+          return {
+            ...planWithoutId,
+            observation_id: id,
+            created_by: user.id
+          };
+        });
+
+        const { error: insertError } = await supabase
+          .from('action_plans')
+          .insert(actionPlansToInsert);
+
+        if (insertError) throw insertError;
+      }
+
+      // Clear the deleted action plans list after successful save
+      setDeletedActionPlanIds([]);
       toast.success('Report updated successfully');
+      navigate('/');
     } catch (err) {
-      toast.error('Failed to update report');
-      setError('Failed to update report');
+      console.error('Update Error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update report';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -107,7 +440,10 @@ export function ReportView() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <lucide.Loader2 className="h-8 w-8 text-green-600 animate-spin" />
+        <div className="text-center">
+          <lucide.Loader2 className="h-8 w-8 text-green-600 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Loading report...</p>
+        </div>
       </div>
     );
   }
@@ -146,7 +482,7 @@ export function ReportView() {
               >
                 <lucide.ArrowLeft className="h-6 w-6" />
               </button>
-              <h1 className="text-2xl font-bold text-gray-900">Safety Report Details</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Edit Safety Report</h1>
             </div>
             <div className="flex items-center gap-3">
               <button
@@ -156,192 +492,538 @@ export function ReportView() {
                 <lucide.Download className="h-5 w-5" />
                 Export
               </button>
-              {isEditing ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleCancel}
-                    className="px-4 py-2 text-gray-600 hover:text-gray-700 flex items-center gap-2"
-                  >
-                    <lucide.X className="h-5 w-5" />
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {saving ? (
-                      <lucide.Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <lucide.Save className="h-5 w-5" />
-                    )}
-                    Save Changes
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={handleEdit}
-                  className="px-4 py-2 text-green-600 hover:text-green-700 flex items-center gap-2"
-                >
-                  <lucide.Edit2 className="h-5 w-5" />
-                  Edit Report
-                </button>
-              )}
             </div>
           </div>
         </div>
 
-        {/* Report Content */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="grid grid-cols-2 gap-6">
-            {/* Status Badge */}
-            <div className="col-span-2">
-              {isEditing ? (
-                <select
-                  value={editedReport.status}
-                  onChange={(e) => setEditedReport({ ...editedReport, status: e.target.value })}
-                  className="px-3 py-1 rounded-full text-sm font-medium bg-white border focus:outline-none focus:ring-2 focus:ring-green-500"
-                >
-                  <option value="open">Open</option>
-                  <option value="closed">Closed</option>
-                </select>
-              ) : (
-                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                  report.status === 'open'
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-gray-100 text-gray-800'
-                }`}>
-                  {report.status === 'open' ? 'Open' : 'Closed'}
-                </span>
-              )}
-            </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
+            {error}
+          </div>
+        )}
 
-            {/* Project & Company */}
-            <div>
-              <label className="text-sm font-medium text-gray-500">Project</label>
-              <p className="text-gray-900">{report.projects?.name}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">Company</label>
-              <p className="text-gray-900">{report.companies?.name}</p>
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            {/* General Information */}
+            <div className="space-y-6">
+              <h2 className="text-lg font-semibold text-gray-900">General Information</h2>
 
-            {/* Submitter & Date */}
-            <div>
-              <label className="text-sm font-medium text-gray-500">Submitted By</label>
-              <p className="text-gray-900">{report.submitter_name}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">Date & Time</label>
-              <p className="text-gray-900">
-                {format(new Date(`${report.date} ${report.time}`), 'PPpp')}
-              </p>
-            </div>
+              {/* Project & Company */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Project
+                  </label>
+                  <select
+                    value={project}
+                    onChange={(e) => setProject(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Select Project</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Company
+                  </label>
+                  <select
+                    value={company}
+                    onChange={(e) => setCompany(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Select Company</option>
+                    {companies.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-            {/* Location & Department */}
-            <div>
-              <label className="text-sm font-medium text-gray-500">Location</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editedReport.location}
-                  onChange={(e) => setEditedReport({ ...editedReport, location: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-                />
-              ) : (
-                <p className="text-gray-900">{report.location}</p>
-              )}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">Department</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editedReport.department}
-                  onChange={(e) => setEditedReport({ ...editedReport, department: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-                />
-              ) : (
-                <p className="text-gray-900">{report.department}</p>
-              )}
-            </div>
+              {/* Submitter & Date/Time */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Submitter Name
+                  </label>
+                  <input
+                    type="text"
+                    value={submitterName}
+                    onChange={(e) => setSubmitterName(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Time
+                    </label>
+                    <input
+                      type="time"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
 
-            {/* Description */}
-            <div className="col-span-2">
-              <label className="text-sm font-medium text-gray-500">Description</label>
-              {isEditing ? (
-                <textarea
-                  value={editedReport.description}
-                  onChange={(e) => setEditedReport({ ...editedReport, description: e.target.value })}
-                  rows={4}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-                />
-              ) : (
-                <p className="text-gray-900 whitespace-pre-wrap">{report.description}</p>
-              )}
-            </div>
-
-            {/* Risk Assessment */}
-            <div>
-              <label className="text-sm font-medium text-gray-500">Consequences</label>
-              {isEditing ? (
-                <select
-                  value={editedReport.consequences}
-                  onChange={(e) => setEditedReport({ ...editedReport, consequences: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-                >
-                  <option value="minor">Minor</option>
-                  <option value="moderate">Moderate</option>
-                  <option value="major">Major</option>
-                  <option value="severe">Severe</option>
-                </select>
-              ) : (
-                <p className="text-gray-900">{report.consequences}</p>
-              )}
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">Likelihood</label>
-              {isEditing ? (
-                <select
-                  value={editedReport.likelihood}
-                  onChange={(e) => setEditedReport({ ...editedReport, likelihood: e.target.value })}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-                >
-                  <option value="unlikely">Unlikely</option>
-                  <option value="possible">Possible</option>
-                  <option value="likely">Likely</option>
-                  <option value="very-likely">Very Likely</option>
-                </select>
-              ) : (
-                <p className="text-gray-900">{report.likelihood}</p>
-              )}
-            </div>
-
-            {/* Supporting Image */}
-            {report.supporting_image && (
-              <div className="col-span-2">
-                <label className="text-sm font-medium text-gray-500">Supporting Image</label>
-                <div className="mt-2">
-                  <img
-                    src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${report.supporting_image}`}
-                    alt="Supporting documentation"
-                    className="max-w-lg rounded-lg border border-gray-200"
+              {/* Department & Location */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Department
+                  </label>
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   />
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* Timestamps */}
-            <div className="col-span-2 pt-6 border-t">
-              <div className="flex justify-between text-sm text-gray-500">
-                <span>Created: {format(new Date(report.created_at), 'PPpp')}</span>
-                {report.updated_at && report.updated_at !== report.created_at && (
-                  <span>Last modified: {format(new Date(report.updated_at), 'PPpp')}</span>
-                )}
+            {/* Observation Details */}
+            <div className="mt-8 space-y-6">
+              <h2 className="text-lg font-semibold text-gray-900">Observation Details</h2>
+
+              {/* Subject Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subject
+                </label>
+                <select
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value as 'SOR' | 'SOP' | 'RES')}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="SOR">Safety Observation Report (SOR)</option>
+                  <option value="SOP">Standard Operating Procedure (SOP)</option>
+                  <option value="RES">Risk Evaluation Sheet (RES)</option>
+                </select>
+              </div>
+
+              {/* Safety Categories */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Safety Categories
+                </label>
+                <SafetyCategories
+                  selectedCategories={selectedCategories}
+                  onSelectCategory={handleCategorySelect}
+                  categories={safetyCategories}
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                />
+              </div>
+
+              {/* Report Group */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Report Group
+                </label>
+                <select
+                  value={reportGroup}
+                  onChange={(e) => setReportGroup(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="">Select Group</option>
+                  <option value="operations">Operations</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="safety">Safety</option>
+                  <option value="contractors">Contractors</option>
+                </select>
               </div>
             </div>
+
+            {/* Risk Assessment */}
+            <div className="mt-8 space-y-6">
+              <h2 className="text-lg font-semibold text-gray-900">Risk Assessment</h2>
+
+              {/* Consequences & Likelihood */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Consequences
+                  </label>
+                  <select
+                    value={consequences}
+                    onChange={(e) => setConsequences(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Select Severity</option>
+                    <option value="minor">Minor</option>
+                    <option value="moderate">Moderate</option>
+                    <option value="major">Major</option>
+                    <option value="severe">Severe</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Likelihood
+                  </label>
+                  <select
+                    value={likelihood}
+                    onChange={(e) => setLikelihood(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Select Likelihood</option>
+                    <option value="unlikely">Unlikely</option>
+                    <option value="possible">Possible</option>
+                    <option value="likely">Likely</option>
+                    <option value="very-likely">Very Likely</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setStatus('open')}
+                    className={`py-2 px-4 rounded-lg border transition-colors ${
+                      status === 'open'
+                        ? 'bg-green-50 border-green-500 text-green-700'
+                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatus('closed')}
+                    className={`py-2 px-4 rounded-lg border transition-colors ${
+                      status === 'closed'
+                        ? 'bg-gray-50 border-gray-500 text-gray-700'
+                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Closed
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Image Upload */}
+            <div className="mt-8 space-y-4">
+              <div className="flex items-center gap-2">
+                <lucide.Image className="h-5 w-5 text-green-600" />
+                <label className="text-sm font-medium text-gray-700">Supporting Image</label>
+              </div>
+              <div className="flex items-center gap-4">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="hidden"
+                  id="image-upload"
+                />
+                <label
+                  htmlFor="image-upload"
+                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
+                >
+                  Choose File
+                </label>
+                {imageFile && (
+                  <span className="text-sm text-gray-500">{imageFile.name}</span>
+                )}
+              </div>
+              {imagePreview && (
+                <div className="mt-4">
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="max-w-xs rounded-lg border border-gray-200"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Action Plan Section */}
+            <div className="mt-8 bg-gray-50 p-6 rounded-lg">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <lucide.CheckSquare className="h-5 w-5 text-green-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">Action Plan Required?</h2>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setActionPlanRequired('yes')}
+                    className={`py-2 px-4 rounded-lg border transition-colors ${
+                      actionPlanRequired === 'yes'
+                        ? 'bg-green-50 border-green-500 text-green-700'
+                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActionPlanRequired('no')}
+                    className={`py-2 px-4 rounded-lg border transition-colors ${
+                      actionPlanRequired === 'no'
+                        ? 'bg-green-50 border-green-500 text-green-700'
+                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    No
+                  </button>
+                </div>
+              </div>
+
+              {actionPlanRequired === 'yes' && (
+                <div className="space-y-6">
+                  {/* Action Description */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <lucide.FileText className="h-5 w-5 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Action</label>
+                    </div>
+                    <textarea
+                      value={currentActionPlan.action}
+                      onChange={(e) => setCurrentActionPlan({
+                        ...currentActionPlan,
+                        action: e.target.value
+                      })}
+                      placeholder="Enter a detailed description of the required action"
+                      rows={4}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                    />
+                  </div>
+
+                  {/* Due Date */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <lucide.Calendar className="h-5 w-5 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Due Date</label>
+                    </div>
+                    <input
+                      type="date"
+                      value={currentActionPlan.due_date}
+                      onChange={(e) => setCurrentActionPlan({
+                        ...currentActionPlan,
+                        due_date: e.target.value
+                      })}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Responsible Person */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <lucide.User className="h-5 w-5 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Responsible Person</label>
+                    </div>
+                    <input
+                      type="text"
+                      value={currentActionPlan.responsible_person}
+                      onChange={(e) => setCurrentActionPlan({
+                        ...currentActionPlan,
+                        responsible_person: e.target.value
+                      })}
+                      placeholder="Enter name of person responsible"
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Follow-up Contact */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <lucide.UserCheck className="h-5 w-5 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Follow-up Contact</label>
+                    </div>
+                    <input
+                      type="text"
+                      value={currentActionPlan.follow_up_contact}
+                      onChange={(e) => setCurrentActionPlan({
+                        ...currentActionPlan,
+                        follow_up_contact: e.target.value
+                      })}
+                      placeholder="Enter name of person monitoring progress"
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Action Plan Buttons */}
+                  <div className="flex gap-4">
+                    <button
+                      type="button"
+                      onClick={() => handleSaveActionPlan(false)}
+                      className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <lucide.Save className="h-5 w-5" />
+                      Save Action Plan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveActionPlan(true)}
+                      className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <lucide.Plus className="h-5 w-5" />
+                      Save & Add Another
+                    </button>
+                  </div>
+
+                  {/* List of Saved Action Plans */}
+                  {actionPlans.length > 0 && (
+                    <div className="mt-8">
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">Saved Action Plans</h3>
+                      <div className="space-y-4">
+                        {actionPlans.map((plan, index) => (
+                          <div
+                            key={index}
+                            className="bg-white p-4 rounded-lg shadow mb-4"
+                          >
+                            {editingActionPlanIndex === index ? (
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700">Action</label>
+                                  <input
+                                    type="text"
+                                    value={editedActionPlan?.action || ''}
+                                    onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, action: e.target.value })}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700">Due Date</label>
+                                  <input
+                                    type="date"
+                                    value={editedActionPlan?.due_date || ''}
+                                    onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, due_date: e.target.value })}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700">Responsible Person</label>
+                                  <input
+                                    type="text"
+                                    value={editedActionPlan?.responsible_person || ''}
+                                    onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, responsible_person: e.target.value })}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700">Follow-up Contact</label>
+                                  <input
+                                    type="text"
+                                    value={editedActionPlan?.follow_up_contact || ''}
+                                    onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, follow_up_contact: e.target.value })}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div className="flex justify-end space-x-2">
+                                  <button
+                                    onClick={handleCancelEditActionPlan}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={handleSaveEditedActionPlan}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                                  >
+                                    Save Changes
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="font-medium">Action: {plan.action}</p>
+                                <p>Due Date: {plan.due_date}</p>
+                                <p>Responsible Person: {plan.responsible_person}</p>
+                                <p>Follow-up Contact: {plan.follow_up_contact}</p>
+                                <p>Status: {plan.status}</p>
+                                <div className="mt-4 flex justify-end space-x-2">
+                                  <button
+                                    onClick={() => handleEditActionPlan(index)}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteActionPlan(index)}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Submit Button */}
+            <div className="mt-8 flex justify-end">
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <lucide.Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <>
+                    <lucide.Save className="h-5 w-5" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
+        </form>
       </div>
 
       {/* Export Modal */}

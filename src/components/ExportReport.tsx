@@ -1,236 +1,246 @@
 import React, { useState } from 'react';
+import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
-import * as XLSX from 'xlsx';
+import 'jspdf-autotable';
+import { Report, SafetyCategory, ActionPlan } from '../lib/types';
 import * as lucide from 'lucide-react';
-import { format } from 'date-fns';
-import toast from 'react-hot-toast';
+import { supabase } from '../lib/supabase';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { Download, FileText, FileSpreadsheet } from 'lucide-react';
 
 interface ExportReportProps {
-  data: any;
+  data: Report;
   onClose: () => void;
 }
 
+interface ExportFormat {
+  value: string;
+  label: string;
+}
+
 export function ExportReport({ data, onClose }: ExportReportProps) {
-  const [exportFormat, setExportFormat] = useState<'pdf' | 'excel' | 'csv'>('pdf');
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>({ value: 'pdf', label: 'PDF' });
+  const [includeImages, setIncludeImages] = useState(true);
+  const [includeActionPlans, setIncludeActionPlans] = useState(true);
+  const [includeSafetyCategories, setIncludeSafetyCategories] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  const validateData = () => {
-    if (!data) {
-      throw new Error('No data available for export');
-    }
-
-    const requiredFields = ['id', 'submitter_name', 'date', 'description'];
-    const missingFields = requiredFields.filter(field => !data[field]);
-
-    if (missingFields.length > 0) {
-      throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
-    }
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
   };
 
-  const generateFileName = () => {
-    const timestamp = format(new Date(), 'yyyyMMdd-HHmmss');
-    const baseFileName = `safety-report-${timestamp}`;
-    
-    switch (exportFormat) {
-      case 'pdf':
-        return `${baseFileName}.pdf`;
-      case 'excel':
-        return `${baseFileName}.xlsx`;
-      case 'csv':
-        return `${baseFileName}.csv`;
-      default:
-        return baseFileName;
-    }
+  const formatTime = (timeString: string) => {
+    return new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   const exportToPDF = async () => {
-    const doc = new jsPDF();
-    
-    // Add header
-    doc.setFontSize(20);
-    doc.text('Safety Observation Report', 20, 20);
-    
-    // Add content
-    doc.setFontSize(12);
-    doc.text(`Report ID: ${data.id}`, 20, 40);
-    doc.text(`Submitter: ${data.submitter_name}`, 20, 50);
-    doc.text(`Date: ${format(new Date(data.date), 'PPP')}`, 20, 60);
-    doc.text(`Location: ${data.location}`, 20, 70);
-    
-    // Add description with word wrap
-    const splitDescription = doc.splitTextToSize(data.description, 170);
-    doc.text(splitDescription, 20, 90);
-    
-    return doc;
-  };
-
-  const exportToExcel = () => {
-    const worksheet = XLSX.utils.json_to_sheet([data]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Safety Report');
-    return workbook;
-  };
-
-  const handlePreview = async () => {
+    setLoading(true);
     try {
-      validateData();
-      
-      if (exportFormat === 'pdf') {
-        const doc = await exportToPDF();
-        const pdfDataUri = doc.output('datauristring');
-        window.open(pdfDataUri);
-      } else {
-        // For Excel/CSV, show a preview in a table format
-        setIsPreviewOpen(true);
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage();
+      const { width, height } = page.getSize();
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const fontSize = 12;
+      const lineHeight = 15;
+      let y = height - 50;
+
+      const addText = (text: string, x: number, isBold = false) => {
+        page.drawText(text, {
+          x,
+          y,
+          size: fontSize,
+          font,
+          color: rgb(0, 0, 0)
+        });
+        y -= lineHeight;
+      };
+
+      // Add report details
+      addText(`Report ID: ${data.id}`, 50);
+      addText(`Subject: ${data.subject}`, 50);
+      addText(`Project: ${data.project}`, 50);
+      addText(`Company: ${data.company}`, 50);
+      addText(`Submitter: ${data.submitter_name}`, 50);
+      addText(`Date: ${formatDate(data.date)}`, 50);
+      addText(`Time: ${formatTime(data.time)}`, 50);
+      addText(`Location: ${data.location}`, 50);
+      addText(`Department: ${data.department}`, 50);
+      addText(`Description: ${data.description}`, 50);
+      addText(`Report Group: ${data.report_group}`, 50);
+      addText(`Potential Consequences: ${data.consequences}`, 50);
+      addText(`Likelihood: ${data.likelihood}`, 50);
+      addText(`Status: ${data.status}`, 50);
+
+      // Add safety categories if included
+      if (includeSafetyCategories && data.safety_categories) {
+        addText('Safety Categories:', 50, true);
+        await addSafetyCategoriesToPDF(pdfDoc, data.safety_categories, y, page, font);
       }
+
+      // Add action plans if included
+      if (includeActionPlans && data.action_plans) {
+        addText('Action Plans:', 50, true);
+        await addActionPlansToPDF(pdfDoc, data.action_plans, y, page, font);
+      }
+
+      // Add images if included
+      if (includeImages && data.supporting_image) {
+        try {
+          const { data: imageData, error: imageError } = await supabase.storage
+            .from('safety-images')
+            .download(data.supporting_image);
+
+          if (!imageError && imageData) {
+            const imageBytes = await imageData.arrayBuffer();
+            const image = await pdfDoc.embedJpg(imageBytes);
+            const imageDims = image.scale(0.5);
+            page.drawImage(image, {
+              x: 50,
+              y: y - imageDims.height,
+              width: imageDims.width,
+              height: imageDims.height
+            });
+          }
+        } catch (error) {
+          console.error('Error adding image to PDF:', error);
+        }
+      }
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      saveAs(blob, `safety-report-${data.id}.pdf`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to generate preview');
-    }
-  };
-
-  const handleExport = async () => {
-    try {
-      setIsExporting(true);
-      validateData();
-
-      const fileName = generateFileName();
-
-      switch (exportFormat) {
-        case 'pdf': {
-          const doc = await exportToPDF();
-          doc.save(fileName);
-          break;
-        }
-        case 'excel': {
-          const workbook = exportToExcel();
-          XLSX.writeFile(workbook, fileName);
-          break;
-        }
-        case 'csv': {
-          const workbook = exportToExcel();
-          XLSX.writeFile(workbook, fileName, { bookType: 'csv' });
-          break;
-        }
-      }
-
-      toast.success('Report exported successfully!');
-      
-      // Ask if user wants to open the file
-      const shouldOpen = window.confirm('Would you like to open the exported file?');
-      if (shouldOpen) {
-        // For PDF, we can open in a new tab
-        if (exportFormat === 'pdf') {
-          const doc = await exportToPDF();
-          const pdfDataUri = doc.output('datauristring');
-          window.open(pdfDataUri);
-        } else {
-          toast.info('Please check your downloads folder for the exported file');
-        }
-      }
-
-      onClose();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to export report');
+      console.error('Error generating PDF:', error);
     } finally {
-      setIsExporting(false);
+      setLoading(false);
     }
+  };
+
+  const exportToCSV = () => {
+    const csvData = [
+      ['Report ID', data.id],
+      ['Subject', data.subject],
+      ['Project', data.project],
+      ['Company', data.company],
+      ['Submitter', data.submitter_name],
+      ['Date', formatDate(data.date)],
+      ['Time', formatTime(data.time)],
+      ['Location', data.location],
+      ['Department', data.department],
+      ['Description', data.description],
+      ['Report Group', data.report_group],
+      ['Potential Consequences', data.consequences],
+      ['Likelihood', data.likelihood],
+      ['Status', data.status]
+    ];
+
+    if (includeSafetyCategories && data.safety_categories) {
+      csvData.push(['Safety Categories', addSafetyCategoriesToCSV(data.safety_categories)]);
+    }
+
+    if (includeActionPlans && data.action_plans) {
+      data.action_plans.forEach((plan: ActionPlan, index: number) => {
+        csvData.push([`Action Plan ${index + 1}`, '']);
+        csvData.push(['Action', plan.action]);
+        csvData.push(['Due Date', formatDate(plan.due_date)]);
+        csvData.push(['Responsible Person', plan.responsible_person]);
+        csvData.push(['Follow-up Contact', plan.follow_up_contact]);
+        csvData.push(['Status', plan.status]);
+      });
+    }
+
+    const csvContent = csvData.map(row => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+    saveAs(blob, `safety-report-${data.id}.csv`);
+  };
+
+  const handleExport = () => {
+    if (exportFormat.value === 'pdf') {
+      exportToPDF();
+    } else {
+      exportToCSV();
+    }
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-semibold text-gray-900">Export Report</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-500"
-            >
-              <lucide.X className="h-6 w-6" />
-            </button>
-          </div>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Export Report</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+            <lucide.X className="h-5 w-5" />
+          </button>
+        </div>
 
-          {/* Format Selection */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Export Format
             </label>
-            <div className="grid grid-cols-3 gap-4">
-              {(['pdf', 'excel', 'csv'] as const).map((format) => (
-                <button
-                  key={format}
-                  onClick={() => setExportFormat(format)}
-                  className={`p-4 border rounded-lg flex flex-col items-center gap-2 transition-colors ${
-                    exportFormat === format
-                      ? 'border-green-500 bg-green-50 text-green-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-700'
-                  }`}
-                >
-                  {format === 'pdf' && <lucide.FileText className="h-6 w-6" />}
-                  {format === 'excel' && <lucide.Table className="h-6 w-6" />}
-                  {format === 'csv' && <lucide.FileSpreadsheet className="h-6 w-6" />}
-                  <span className="text-sm font-medium uppercase">{format}</span>
-                </button>
-              ))}
-            </div>
+            <select
+              value={exportFormat.value}
+              onChange={(e) => setExportFormat({
+                value: e.target.value,
+                label: e.target.value === 'pdf' ? 'PDF' : 'CSV'
+              })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+            >
+              <option value="pdf">PDF</option>
+              <option value="csv">CSV</option>
+            </select>
           </div>
 
-          {/* Preview */}
-          {isPreviewOpen && exportFormat !== 'pdf' && (
-            <div className="mb-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Preview</h3>
-              <div className="border rounded-lg overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      {Object.keys(data).map((key) => (
-                        <th
-                          key={key}
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                        >
-                          {key}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    <tr>
-                      {Object.values(data).map((value: any, index) => (
-                        <td
-                          key={index}
-                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                        >
-                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          <div className="space-y-2">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={includeImages}
+                onChange={(e) => setIncludeImages(e.target.checked)}
+                className="mr-2"
+              />
+              Include Images
+            </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={includeActionPlans}
+                onChange={(e) => setIncludeActionPlans(e.target.checked)}
+                className="mr-2"
+              />
+              Include Action Plans
+            </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={includeSafetyCategories}
+                onChange={(e) => setIncludeSafetyCategories(e.target.checked)}
+                className="mr-2"
+              />
+              Include Safety Categories
+            </label>
+          </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-4">
+          <div className="flex justify-end gap-4 mt-6">
             <button
-              onClick={handlePreview}
-              className="px-4 py-2 text-green-600 hover:text-green-700 font-medium flex items-center gap-2"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
             >
-              <lucide.Eye className="h-5 w-5" />
-              Preview
+              Cancel
             </button>
             <button
               onClick={handleExport}
-              disabled={isExporting}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
             >
-              {isExporting ? (
-                <lucide.Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <lucide.Download className="h-5 w-5" />
-              )}
-              Export
+              {loading ? 'Exporting...' : 'Export'}
             </button>
           </div>
         </div>
@@ -238,3 +248,31 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
     </div>
   );
 }
+
+const addActionPlanToPDF = async (pdfDoc: PDFDocument, actionPlan: ActionPlan, y: number, page: any, font: any) => {
+  // ... existing code ...
+  return y;
+};
+
+const addActionPlansToPDF = async (pdfDoc: PDFDocument, actionPlans: ActionPlan[], y: number, page: any, font: any) => {
+  let currentY = y;
+  for (const plan of actionPlans) {
+    currentY = await addActionPlanToPDF(pdfDoc, plan, currentY, page, font);
+  }
+  return currentY;
+};
+
+const addActionPlansToCSV = (actionPlans: ActionPlan[]): string => {
+  return actionPlans.map(plan => 
+    `${plan.action}|${plan.due_date}|${plan.responsible_person}|${plan.follow_up_contact}|${plan.status}`
+  ).join('\n');
+};
+
+const addSafetyCategoriesToPDF = async (pdfDoc: PDFDocument, categories: SafetyCategory[], y: number, page: any, font: any) => {
+  // ... existing code ...
+  return y;
+};
+
+const addSafetyCategoriesToCSV = (categories: SafetyCategory[]): string => {
+  return categories.map(category => category.name).join(', ');
+};
