@@ -82,3 +82,24 @@ export interface Report {
   created_at: string;
   updated_at: string;
 }
+
+export interface SafetyReport {
+  id: string;
+  subject: string;
+  submitter_name: string;
+  date: string;
+  description: string;
+  consequences: string;
+  status: string;
+  created_at: string;
+  projects: { id: string; name: string };
+  companies: { id: string; name: string };
+  action_plans: {
+    id: string;
+    action: string;
+    due_date: string;
+    responsible_person: string;
+    follow_up_contact: string;
+    status: string;
+  }[];
+}

@@ -7,6 +7,9 @@ import { SafetyCategories } from '../components/SafetyCategories';
 import { SafetyReportsTable } from '../components/SafetyReportsTable';
 import toast from 'react-hot-toast';
 import type { SafetyCategory, Project, Company } from '../lib/types';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import { SafetyReportPDF } from '../components/SafetyReportPDF';
+import { format } from 'date-fns';
 
 interface ActionPlan {
   id?: string;
@@ -15,6 +18,7 @@ interface ActionPlan {
   responsible_person: string;
   follow_up_contact: string;
   status: 'open' | 'closed';
+  supporting_image: string;
 }
 
 interface ValidationErrors {
@@ -34,7 +38,8 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
     due_date: '',
     responsible_person: '',
     follow_up_contact: '',
-    status: 'open'
+    status: 'open',
+    supporting_image: ''
   });
   const [actionPlanRequired, setActionPlanRequired] = useState('no');
   const [loading, setLoading] = useState(false);
@@ -66,6 +71,11 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [editingActionPlanIndex, setEditingActionPlanIndex] = useState<number | null>(null);
   const [editedActionPlan, setEditedActionPlan] = useState<ActionPlan | null>(null);
+  const [actionPlanImageFile, setActionPlanImageFile] = useState<File | null>(null);
+  const [actionPlanImagePreview, setActionPlanImagePreview] = useState('');
+
+  // Add state for report data
+  const [reportData, setReportData] = useState<any>(null);
 
   const handleCategorySelect = (categoryId: string) => {
     setSelectedCategories(prev => 
@@ -156,6 +166,18 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
     }
   };
 
+  const handleActionPlanImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setActionPlanImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setActionPlanImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSaveActionPlan = async (addAnother: boolean) => {
     if (!currentActionPlan.action || !currentActionPlan.due_date || 
         !currentActionPlan.responsible_person || !currentActionPlan.follow_up_contact) {
@@ -163,14 +185,42 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
       return;
     }
 
-    setActionPlans(prev => [...prev, currentActionPlan]);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast.error('User not authenticated');
+      return;
+    }
+
+    let imagePath = '';
+    if (actionPlanImageFile) {
+      const fileName = `${user.id}/${Date.now()}-${actionPlanImageFile.name}`;
+      const { data: imageData, error: imageError } = await supabase.storage
+        .from('action-plan-images')
+        .upload(fileName, actionPlanImageFile);
+
+      if (imageError) {
+        console.error('Image upload error:', imageError);
+        toast.error('Failed to upload image');
+        return;
+      }
+      imagePath = imageData.path;
+    }
+
+    setActionPlans(prev => [...prev, {
+      ...currentActionPlan,
+      supporting_image: imagePath
+    }]);
+    
     setCurrentActionPlan({
       action: '',
       due_date: '',
       responsible_person: '',
       follow_up_contact: '',
-      status: 'open'
+      status: 'open',
+      supporting_image: ''
     });
+    setActionPlanImageFile(null);
+    setActionPlanImagePreview('');
 
     if (!addAnother) {
       setActionPlanRequired('no');
@@ -275,12 +325,51 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
               responsible_person: plan.responsible_person,
               follow_up_contact: plan.follow_up_contact,
               status: plan.status,
+              supporting_image: plan.supporting_image,
               created_by: user.id
             }))
           );
 
         if (actionPlansError) throw actionPlansError;
       }
+
+      // Get the full report data for PDF generation
+      const { data: projectData } = await supabase
+        .from('projects')
+        .select('name')
+        .eq('id', project)
+        .single();
+
+      const { data: companyData } = await supabase
+        .from('companies')
+        .select('name')
+        .eq('id', company)
+        .single();
+
+      const { data: categoriesData } = await supabase
+        .from('safety_categories')
+        .select('*')
+        .in('id', selectedCategories);
+
+      // Set the report data for PDF generation
+      setReportData({
+        project: projectData!,
+        company: companyData!,
+        submitterName,
+        date,
+        time,
+        department,
+        location,
+        description,
+        reportGroup,
+        consequences,
+        likelihood,
+        status,
+        subject,
+        supportingImage: imagePath,
+        categories: categoriesData || [],
+        actionPlans
+      });
 
       toast.success('Report saved successfully');
       navigate('/');
@@ -314,13 +403,29 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
             <lucide.Shield className="h-8 w-8 text-green-600" />
             <h1 className="text-2xl font-bold text-gray-900">Safety Observation Report</h1>
           </div>
-          <button
-            onClick={() => signOut()}
-            className="text-gray-500 hover:text-gray-700 flex items-center gap-2"
-          >
-            <lucide.LogOut className="h-5 w-5" />
-            Sign Out
-          </button>
+          <div className="flex items-center gap-4">
+            {reportData && (
+              <PDFDownloadLink
+                document={<SafetyReportPDF report={reportData} />}
+                fileName={`safety-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+              >
+                {({ loading }) => (
+                  <>
+                    <lucide.Download className="h-5 w-5" />
+                    {loading ? 'Preparing PDF...' : 'Download PDF'}
+                  </>
+                )}
+              </PDFDownloadLink>
+            )}
+            <button
+              onClick={() => signOut()}
+              className="text-gray-500 hover:text-gray-700 flex items-center gap-2"
+            >
+              <lucide.LogOut className="h-5 w-5" />
+              Sign Out
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -664,7 +769,17 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                   <div className="grid grid-cols-2 gap-4">
                     <button
                       type="button"
-                      onClick={() => setActionPlanRequired('yes')}
+                      onClick={() => {
+                        setActionPlanRequired('yes');
+                        setCurrentActionPlan({
+                          action: '',
+                          due_date: '',
+                          responsible_person: '',
+                          follow_up_contact: '',
+                          status: 'open',
+                          supporting_image: ''
+                        });
+                      }}
                       className={`py-2 px-4 rounded-lg border transition-colors ${
                         actionPlanRequired === 'yes'
                           ? 'bg-green-50 border-green-500 text-green-700'
@@ -675,7 +790,10 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActionPlanRequired('no')}
+                      onClick={() => {
+                        setActionPlanRequired('no');
+                        setActionPlans([]);
+                      }}
                       className={`py-2 px-4 rounded-lg border transition-colors ${
                         actionPlanRequired === 'no'
                           ? 'bg-green-50 border-green-500 text-green-700'
@@ -689,6 +807,133 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
 
                 {actionPlanRequired === 'yes' && (
                   <div className="space-y-6">
+                    {/* Action Description */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.FileText className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Action</label>
+                      </div>
+                      <textarea
+                        value={currentActionPlan.action}
+                        onChange={(e) => setCurrentActionPlan({
+                          ...currentActionPlan,
+                          action: e.target.value
+                        })}
+                        placeholder="Enter a detailed description of the required action"
+                        rows={4}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                      />
+                    </div>
+
+                    {/* Supporting Image */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.Image className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Supporting Image</label>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleActionPlanImageChange}
+                          className="hidden"
+                          id="action-plan-image-upload"
+                        />
+                        <label
+                          htmlFor="action-plan-image-upload"
+                          className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
+                        >
+                          Choose File
+                        </label>
+                        {actionPlanImageFile && (
+                          <span className="text-sm text-gray-500">{actionPlanImageFile.name}</span>
+                        )}
+                      </div>
+                      {actionPlanImagePreview && (
+                        <div className="mt-4">
+                          <img
+                            src={actionPlanImagePreview}
+                            alt="Preview"
+                            className="max-w-xs rounded-lg border border-gray-200"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Due Date */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.Calendar className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Due Date</label>
+                      </div>
+                      <input
+                        type="date"
+                        value={currentActionPlan.due_date}
+                        onChange={(e) => setCurrentActionPlan({
+                          ...currentActionPlan,
+                          due_date: e.target.value
+                        })}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    {/* Responsible Person */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.User className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Responsible Person</label>
+                      </div>
+                      <input
+                        type="text"
+                        value={currentActionPlan.responsible_person}
+                        onChange={(e) => setCurrentActionPlan({
+                          ...currentActionPlan,
+                          responsible_person: e.target.value
+                        })}
+                        placeholder="Enter name of person responsible"
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    {/* Follow-up Contact */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.UserCheck className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Follow-up Contact</label>
+                      </div>
+                      <input
+                        type="text"
+                        value={currentActionPlan.follow_up_contact}
+                        onChange={(e) => setCurrentActionPlan({
+                          ...currentActionPlan,
+                          follow_up_contact: e.target.value
+                        })}
+                        placeholder="Enter name of person monitoring progress"
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    {/* Action Plan Buttons */}
+                    <div className="flex gap-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveActionPlan(false)}
+                        className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <lucide.Save className="h-5 w-5" />
+                        Save Action Plan
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveActionPlan(true)}
+                        className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <lucide.Plus className="h-5 w-5" />
+                        Save & Add Another
+                      </button>
+                    </div>
+
                     {/* List of Saved Action Plans */}
                     {actionPlans.length > 0 && (
                       <div className="mt-8">
@@ -699,122 +944,40 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                               key={index}
                               className="p-4 border border-gray-200 rounded-lg"
                             >
-                              {editingActionPlanIndex === index ? (
-                                <div className="space-y-4">
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Action
-                                    </label>
-                                    <textarea
-                                      value={editedActionPlan?.action}
-                                      onChange={(e) => setEditedActionPlan({
-                                        ...editedActionPlan!,
-                                        action: e.target.value
-                                      })}
-                                      rows={4}
-                                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Due Date
-                                    </label>
-                                    <input
-                                      type="date"
-                                      value={editedActionPlan?.due_date}
-                                      onChange={(e) => setEditedActionPlan({
-                                        ...editedActionPlan!,
-                                        due_date: e.target.value
-                                      })}
-                                      min={new Date().toISOString().split('T')[0]}
-                                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Responsible Person
-                                    </label>
-                                    <input
-                                      type="text"
-                                      value={editedActionPlan?.responsible_person}
-                                      onChange={(e) => setEditedActionPlan({
-                                        ...editedActionPlan!,
-                                        responsible_person: e.target.value
-                                      })}
-                                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Follow-up Contact
-                                    </label>
-                                    <input
-                                      type="text"
-                                      value={editedActionPlan?.follow_up_contact}
-                                      onChange={(e) => setEditedActionPlan({
-                                        ...editedActionPlan!,
-                                        follow_up_contact: e.target.value
-                                      })}
-                                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                    />
-                                  </div>
-
-                                  <div className="flex justify-between gap-4">
-                                    <button
-                                      type="button"
-                                      onClick={handleCancelEditActionPlan}
-                                      className="flex-1 py-2 px-4 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 transition-colors"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={handleSaveEditedActionPlan}
-                                      className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                                    >
-                                      Save Changes
-                                    </button>
-                                  </div>
+                              <div className="flex justify-between items-start mb-2">
+                                <h4 className="font-medium text-gray-900">Action Plan #{index + 1}</h4>
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-1 rounded-full text-sm ${
+                                    plan.status === 'open'
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {plan.status.charAt(0).toUpperCase() + plan.status.slice(1)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteActionPlan(index)}
+                                    className="p-1 text-red-500 hover:text-red-700"
+                                  >
+                                    <lucide.Trash2 className="h-4 w-4" />
+                                  </button>
                                 </div>
-                              ) : (
-                                <>
-                                  <div className="flex justify-between items-start mb-2">
-                                    <h4 className="font-medium text-gray-900">Action Plan #{index + 1}</h4>
-                                    <div className="flex items-center gap-2">
-                                      <span className={`px-2 py-1 rounded-full text-sm ${
-                                        plan.status === 'open'
-                                          ? 'bg-green-100 text-green-800'
-                                          : 'bg-gray-100 text-gray-800'
-                                      }`}>
-                                        {plan.status.charAt(0).toUpperCase() + plan.status.slice(1)}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleEditActionPlan(index)}
-                                        className="p-1 text-gray-500 hover:text-gray-700"
-                                      >
-                                        <lucide.Edit2 className="h-4 w-4" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteActionPlan(index)}
-                                        className="p-1 text-red-500 hover:text-red-700"
-                                      >
-                                        <lucide.Trash2 className="h-4 w-4" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <p className="text-gray-600 mb-2">{plan.action}</p>
-                                  <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">
-                                    <div>Due Date: {plan.due_date}</div>
-                                    <div>Responsible: {plan.responsible_person}</div>
-                                    <div>Follow-up: {plan.follow_up_contact}</div>
-                                  </div>
-                                </>
+                              </div>
+                              <p className="text-gray-600 mb-2">{plan.action}</p>
+                              {plan.supporting_image && (
+                                <div className="mb-4">
+                                  <img
+                                    src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/action-plan-images/${plan.supporting_image}`}
+                                    alt="Supporting image"
+                                    className="max-w-xs rounded-lg border border-gray-200"
+                                  />
+                                </div>
                               )}
+                              <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">
+                                <div>Due Date: {plan.due_date}</div>
+                                <div>Responsible: {plan.responsible_person}</div>
+                                <div>Follow-up: {plan.follow_up_contact}</div>
+                              </div>
                             </div>
                           ))}
                         </div>

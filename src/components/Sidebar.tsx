@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import * as lucide from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { LucideIcon } from 'lucide-react';
 
 interface NavItem {
   path: string;
   label: string;
-  icon: keyof typeof lucide;
+  icon: LucideIcon;
   children?: NavItem[];
 }
 
@@ -21,51 +22,46 @@ export function Sidebar() {
     {
       path: '/',
       label: 'Safety Reports',
-      icon: 'ClipboardList',
+      icon: lucide.ClipboardList,
     },
     {
       path: '/stats',
       label: 'Statistics',
-      icon: 'BarChart2',
+      icon: lucide.BarChart2,
       children: [
         {
           path: '/stats/monthly',
           label: 'Monthly Summary',
-          icon: 'CalendarRange',
-        },
-        {
-          path: '/stats/trends',
-          label: 'Trend Analysis',
-          icon: 'TrendingUp',
-        },
+          icon: lucide.CalendarRange,
+        }
       ],
     },
     {
       path: '/categories',
       label: 'Safety Categories',
-      icon: 'Tags',
+      icon: lucide.Tags,
     },
     ...(isAdmin
       ? [
           {
             path: '/admin',
             label: 'Administration',
-            icon: 'Settings',
+            icon: lucide.Settings,
             children: [
               {
                 path: '/admin/users',
                 label: 'Users',
-                icon: 'Users',
+                icon: lucide.Users,
               },
               {
                 path: '/admin/projects',
                 label: 'Projects',
-                icon: 'Briefcase',
+                icon: lucide.Briefcase,
               },
               {
                 path: '/admin/companies',
                 label: 'Companies',
-                icon: 'Building2',
+                icon: lucide.Building2,
               },
             ],
           },
@@ -103,7 +99,7 @@ export function Sidebar() {
   // Render nav items recursively
   const renderNavItems = (items: NavItem[], level = 0) => {
     return items.map((item) => {
-      const Icon = lucide[item.icon];
+      const Icon = item.icon;
       const active = isActive(item.path);
       const hasChildren = item.children && item.children.length > 0;
       const isExpanded = expandedItems.includes(item.path);
@@ -149,7 +145,7 @@ export function Sidebar() {
             </Link>
           )}
           {hasChildren && isExpanded && (
-            <div className="mt-1">{renderNavItems(item.children, level + 1)}</div>
+            <div className="mt-1">{renderNavItems(item.children || [], level + 1)}</div>
           )}
         </div>
       );

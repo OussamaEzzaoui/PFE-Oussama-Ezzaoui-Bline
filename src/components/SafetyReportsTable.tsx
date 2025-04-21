@@ -5,27 +5,9 @@ import * as lucide from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-
-interface SafetyReport {
-  id: string;
-  subject: string;
-  submitter_name: string;
-  date: string;
-  description: string;
-  consequences: string;
-  status: string;
-  created_at: string;
-  projects: { name: string };
-  companies: { name: string };
-  action_plans: {
-    id: string;
-    action: string;
-    due_date: string;
-    responsible_person: string;
-    follow_up_contact: string;
-    status: string;
-  }[];
-}
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import { SafetyReportPDF } from './SafetyReportPDF';
+import type { SafetyReport } from '../lib/types';
 
 interface FilterOptions {
   dateRange: {
@@ -90,6 +72,7 @@ export function SafetyReportsTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [reportToDelete, setReportToDelete] = useState<SafetyReport | null>(null);
+  const [selectedReport, setSelectedReport] = useState<SafetyReport | null>(null);
   const [filters, setFilters] = useState<FilterOptions>({
     dateRange: {
       start: '',
@@ -126,8 +109,8 @@ export function SafetyReportsTable() {
           consequences,
           status,
           created_at,
-          projects(name),
-          companies(name),
+          projects(id, name),
+          companies(id, name),
           action_plans(
             id,
             action,
@@ -137,7 +120,8 @@ export function SafetyReportsTable() {
             status
           )
         `)
-        .order(sortConfig.key, { ascending: sortConfig.direction === 'asc' });
+        .order(sortConfig.key, { ascending: sortConfig.direction === 'asc' })
+        .range((currentPage - 1) * reportsPerPage, currentPage * reportsPerPage - 1);
 
       // Apply filters
       if (filters.dateRange.start) {
@@ -153,11 +137,6 @@ export function SafetyReportsTable() {
         query = query.eq('consequences', filters.severity);
       }
 
-      // Add pagination
-      const start = (currentPage - 1) * reportsPerPage;
-      const end = start + reportsPerPage - 1;
-      query = query.range(start, end);
-
       const { data, error: fetchError, count } = await query;
 
       if (fetchError) throw fetchError;
@@ -167,7 +146,10 @@ export function SafetyReportsTable() {
         ...report,
         projects: report.projects[0] || { name: '' },
         companies: report.companies[0] || { name: '' },
-        action_plans: report.action_plans || []
+        action_plans: (report.action_plans || []).map(plan => ({
+          ...plan,
+          status: plan.status.toLowerCase() as 'open' | 'closed'
+        }))
       }));
 
       setReports(transformedData);
@@ -241,17 +223,33 @@ export function SafetyReportsTable() {
     XLSX.writeFile(workbook, `safety-reports-${format(new Date(), 'yyyy-MM-dd')}.csv`);
   };
 
+  const handleRowClick = (report: SafetyReport) => {
+    setSelectedReport(report);
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-gray-900">Safety Reports</h2>
-        <button
-          onClick={exportToCSV}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-        >
-          <lucide.Download className="h-5 w-5" />
-          Export CSV
-        </button>
+      <div className="bg-white rounded-lg shadow-sm p-4 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <lucide.Shield className="h-8 w-8 text-green-600" />
+          <h1 className="text-2xl font-bold text-gray-900">Safety Reports</h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={exportToCSV}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          >
+            <lucide.FileSpreadsheet className="h-5 w-5" />
+            Export CSV
+          </button>
+          <button
+            onClick={() => navigate('/reports/new')}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+          >
+            <lucide.Plus className="h-5 w-5" />
+            New Report
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -387,7 +385,13 @@ export function SafetyReportsTable() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {reports.map((report) => (
-              <tr key={report.id} className="hover:bg-gray-50">
+              <tr
+                key={report.id}
+                onClick={() => handleRowClick(report)}
+                className={`cursor-pointer hover:bg-gray-50 ${
+                  selectedReport?.id === report.id ? 'bg-green-50' : ''
+                }`}
+              >
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {format(parseISO(report.date), 'PPP')}
                 </td>
@@ -433,15 +437,65 @@ export function SafetyReportsTable() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="flex items-center gap-4">
                     <button
-                      onClick={() => navigate(`/reports/${report.id}`)}
-                      className="text-green-600 hover:text-green-700"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/reports/${report.id}`);
+                      }}
+                      className="text-green-600 hover:text-green-700 flex items-center gap-1"
                     >
-                      View Details
+                      <lucide.Edit className="h-4 w-4" />
+                      Edit
                     </button>
-                    <button
-                      onClick={() => handleDelete(report)}
-                      className="text-red-600 hover:text-red-700"
+                    <PDFDownloadLink
+                      document={<SafetyReportPDF report={{
+                        project: { id: report.projects.id, name: report.projects.name },
+                        company: { id: report.companies.id, name: report.companies.name },
+                        submitterName: report.submitter_name,
+                        date: report.date,
+                        time: format(parseISO(report.created_at), 'HH:mm'),
+                        department: 'General',
+                        location: 'On-site',
+                        description: report.description,
+                        reportGroup: 'Safety',
+                        consequences: report.consequences,
+                        likelihood: 'N/A',
+                        status: report.status,
+                        subject: report.subject,
+                        categories: [],
+                        actionPlans: (report.action_plans || []).map(plan => ({
+                          ...plan,
+                          status: plan.status.toLowerCase() as 'open' | 'closed'
+                        }))
+                      }} />}
+                      fileName={`safety-report-${report.id}-${format(new Date(), 'yyyy-MM-dd')}.pdf`}
+                      className="text-blue-600 hover:text-blue-700 flex items-center gap-1"
                     >
+                      {({ blob, url, loading, error }) => {
+                        if (error) {
+                          console.error('PDF generation error:', error);
+                          return (
+                            <div className="text-red-600 flex items-center gap-1">
+                              <lucide.AlertTriangle className="h-4 w-4" />
+                              Error
+                            </div>
+                          );
+                        }
+                        return (
+                          <>
+                            <lucide.FileText className="h-4 w-4" />
+                            {loading ? 'Loading...' : 'PDF'}
+                          </>
+                        );
+                      }}
+                    </PDFDownloadLink>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(report);
+                      }}
+                      className="text-red-600 hover:text-red-700 flex items-center gap-1"
+                    >
+                      <lucide.Trash2 className="h-4 w-4" />
                       Delete
                     </button>
                   </div>
