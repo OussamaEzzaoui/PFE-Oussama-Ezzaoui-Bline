@@ -52,11 +52,10 @@ export interface MonthlySummary {
   month: string;
   total_observations: number;
   observation_types: Record<string, number>;
-  action_status: Record<string, number>;
+  report_status: Record<string, number>;
   risk_levels: Record<string, number>;
   trending_data: {
     categories: Record<string, number>;
-    avg_response_time: number;
   };
   created_at?: string;
   updated_at?: string;

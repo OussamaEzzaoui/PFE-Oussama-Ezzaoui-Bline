@@ -15,6 +15,7 @@ interface ActionPlan {
   responsible_person: string;
   follow_up_contact: string;
   status: 'open' | 'closed';
+  supporting_image: string;
 }
 
 export function ReportView() {
@@ -33,7 +34,8 @@ export function ReportView() {
     due_date: '',
     responsible_person: '',
     follow_up_contact: '',
-    status: 'open'
+    status: 'open',
+    supporting_image: ''
   });
   const [actionPlanRequired, setActionPlanRequired] = useState('no');
   const [projects, setProjects] = useState<Project[]>([]);
@@ -58,6 +60,8 @@ export function ReportView() {
 
   const [editingActionPlanIndex, setEditingActionPlanIndex] = useState<number | null>(null);
   const [editedActionPlan, setEditedActionPlan] = useState<ActionPlan | null>(null);
+  const [editedActionPlanImageFile, setEditedActionPlanImageFile] = useState<File | null>(null);
+  const [editedActionPlanImagePreview, setEditedActionPlanImagePreview] = useState('');
 
   // Add a new state to track deleted action plan IDs
   const [deletedActionPlanIds, setDeletedActionPlanIds] = useState<string[]>([]);
@@ -65,6 +69,9 @@ export function ReportView() {
   // Add new state for pending action plan changes
   const [pendingActionPlans, setPendingActionPlans] = useState<ActionPlan[]>([]);
   const [isActionPlansLoaded, setIsActionPlansLoaded] = useState(false);
+
+  const [actionPlanImageFile, setActionPlanImageFile] = useState<File | null>(null);
+  const [actionPlanImagePreview, setActionPlanImagePreview] = useState('');
 
   useEffect(() => {
     loadReport();
@@ -243,24 +250,47 @@ export function ReportView() {
       due_date: '',
       responsible_person: '',
       follow_up_contact: '',
-      status: 'open'
+      status: 'open',
+      supporting_image: ''
     };
     setActionPlans([...actionPlans, newActionPlan]);
   };
 
-  const handleDeleteActionPlan = (index: number) => {
+  const handleDeleteActionPlan = async (index: number) => {
     if (!window.confirm('Are you sure you want to delete this action plan? This action cannot be undone.')) {
       return;
     }
     
-    const planToDelete = actionPlans[index];
-    if (planToDelete.id && !planToDelete.id.startsWith('temp-')) {
-      setDeletedActionPlanIds(prev => [...prev, planToDelete.id!]);
+    try {
+      const planToDelete = actionPlans[index];
+      if (planToDelete.id && !planToDelete.id.startsWith('temp-')) {
+        const { error: deleteError } = await supabase
+          .from('action_plans')
+          .delete()
+          .eq('id', planToDelete.id);
+
+        if (deleteError) throw deleteError;
+      }
+      
+      const updatedActionPlans = actionPlans.filter((_, i) => i !== index);
+      setActionPlans(updatedActionPlans);
+      toast.success('Action plan deleted successfully');
+    } catch (err) {
+      console.error('Error deleting action plan:', err);
+      toast.error('Failed to delete action plan');
     }
-    
-    const updatedActionPlans = actionPlans.filter((_, i) => i !== index);
-    setActionPlans(updatedActionPlans);
-    toast.success('Action plan deleted successfully');
+  };
+
+  const handleActionPlanImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setActionPlanImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setActionPlanImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSaveActionPlan = async (addAnother: boolean) => {
@@ -270,31 +300,70 @@ export function ReportView() {
       return;
     }
 
-    // Add to pending action plans
-    const newActionPlan = {
-      ...currentActionPlan,
-      id: `temp-${Date.now()}`
-    };
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
 
-    setPendingActionPlans(prev => [...prev, newActionPlan]);
-    
-    // Reset the form
-    setCurrentActionPlan({
-      action: '',
-      due_date: '',
-      responsible_person: '',
-      follow_up_contact: '',
-      status: 'open'
-    });
+      // Upload image if exists
+      let imagePath = '';
+      if (actionPlanImageFile) {
+        const { data: imageData, error: imageError } = await supabase.storage
+          .from('safety-images')
+          .upload(`${Date.now()}-${actionPlanImageFile.name}`, actionPlanImageFile);
 
-    if (!addAnother) {
-      setActionPlanRequired('no');
+        if (imageError) throw imageError;
+        imagePath = imageData.path;
+      }
+
+      // Save to database
+      const { data: savedPlan, error: saveError } = await supabase
+        .from('action_plans')
+        .insert({
+          observation_id: id,
+          action: currentActionPlan.action,
+          due_date: currentActionPlan.due_date,
+          responsible_person: currentActionPlan.responsible_person,
+          follow_up_contact: currentActionPlan.follow_up_contact,
+          status: currentActionPlan.status,
+          supporting_image: imagePath,
+          created_by: user.id
+        })
+        .select()
+        .single();
+
+      if (saveError) throw saveError;
+
+      // Update local state
+      setActionPlans(prev => [...prev, savedPlan]);
+      
+      // Reset the form
+      setCurrentActionPlan({
+        action: '',
+        due_date: '',
+        responsible_person: '',
+        follow_up_contact: '',
+        status: 'open',
+        supporting_image: ''
+      });
+      setActionPlanImageFile(null);
+      setActionPlanImagePreview('');
+
+      if (!addAnother) {
+        setActionPlanRequired('no');
+      }
+
+      toast.success('Action plan saved successfully');
+    } catch (err) {
+      console.error('Error saving action plan:', err);
+      toast.error('Failed to save action plan');
     }
   };
 
   const handleEditActionPlan = (index: number) => {
     setEditingActionPlanIndex(index);
     setEditedActionPlan(actionPlans[index]);
+    setEditedActionPlanImageFile(null);
+    setEditedActionPlanImagePreview('');
   };
 
   const handleCancelEditActionPlan = () => {
@@ -302,20 +371,72 @@ export function ReportView() {
     setEditedActionPlan(null);
   };
 
-  const handleSaveEditedActionPlan = () => {
-    if (editingActionPlanIndex !== null && editedActionPlan) {
-      const updatedActionPlans = [...actionPlans];
-      updatedActionPlans[editingActionPlanIndex] = {
-        ...editedActionPlan,
-        action: editedActionPlan.action,
-        due_date: editedActionPlan.due_date,
-        responsible_person: editedActionPlan.responsible_person,
-        follow_up_contact: editedActionPlan.follow_up_contact,
-        status: editedActionPlan.status
+  const handleEditedActionPlanImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setEditedActionPlanImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditedActionPlanImagePreview(reader.result as string);
       };
-      setActionPlans(updatedActionPlans);
-      setEditingActionPlanIndex(null);
-      setEditedActionPlan(null);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveEditedActionPlan = async () => {
+    if (editingActionPlanIndex !== null && editedActionPlan) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
+
+        // Upload new image if exists
+        let imagePath = editedActionPlan.supporting_image;
+        if (editedActionPlanImageFile) {
+          const { data: imageData, error: imageError } = await supabase.storage
+            .from('safety-images')
+            .upload(`${Date.now()}-${editedActionPlanImageFile.name}`, editedActionPlanImageFile);
+
+          if (imageError) throw imageError;
+          imagePath = imageData.path;
+        }
+
+        // Update the database
+        const { error: updateError } = await supabase
+          .from('action_plans')
+          .update({
+            action: editedActionPlan.action,
+            due_date: editedActionPlan.due_date,
+            responsible_person: editedActionPlan.responsible_person,
+            follow_up_contact: editedActionPlan.follow_up_contact,
+            status: editedActionPlan.status,
+            supporting_image: imagePath
+          })
+          .eq('id', editedActionPlan.id);
+
+        if (updateError) throw updateError;
+
+        // Update local state
+        const updatedActionPlans = [...actionPlans];
+        updatedActionPlans[editingActionPlanIndex] = {
+          ...editedActionPlan,
+          action: editedActionPlan.action,
+          due_date: editedActionPlan.due_date,
+          responsible_person: editedActionPlan.responsible_person,
+          follow_up_contact: editedActionPlan.follow_up_contact,
+          status: editedActionPlan.status,
+          supporting_image: imagePath
+        };
+        setActionPlans(updatedActionPlans);
+        setEditingActionPlanIndex(null);
+        setEditedActionPlan(null);
+        setEditedActionPlanImageFile(null);
+        setEditedActionPlanImagePreview('');
+        
+        toast.success('Action plan updated successfully');
+      } catch (err) {
+        console.error('Error updating action plan:', err);
+        toast.error('Failed to update action plan');
+      }
     }
   };
 
@@ -328,7 +449,7 @@ export function ReportView() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // First delete the action plans that were marked for deletion
+      // Delete only the action plans that were marked for deletion
       if (deletedActionPlanIds.length > 0) {
         const { error: deleteError } = await supabase
           .from('action_plans')
@@ -336,6 +457,27 @@ export function ReportView() {
           .in('id', deletedActionPlanIds);
 
         if (deleteError) throw deleteError;
+      }
+
+      // Insert only new action plans (those without an ID or with temp ID)
+      const newActionPlans = actionPlans.filter(plan => !plan.id || plan.id.startsWith('temp-'));
+      if (newActionPlans.length > 0) {
+        const { error: insertError } = await supabase
+          .from('action_plans')
+          .insert(
+            newActionPlans.map(plan => ({
+              observation_id: id,
+              action: plan.action,
+              due_date: plan.due_date,
+              responsible_person: plan.responsible_person,
+              follow_up_contact: plan.follow_up_contact,
+              status: plan.status,
+              created_by: user.id,
+              created_at: new Date().toISOString()
+            }))
+          );
+
+        if (insertError) throw insertError;
       }
 
       // Upload new image if exists
@@ -373,65 +515,11 @@ export function ReportView() {
 
       if (updateError) throw updateError;
 
-      // Update categories
-      if (selectedCategories.length > 0) {
-        // Delete existing categories
-        const { error: deleteCategoriesError } = await supabase
-          .from('observation_categories')
-          .delete()
-          .eq('observation_id', id);
-
-        if (deleteCategoriesError) throw deleteCategoriesError;
-
-        // Insert new categories
-        const { error: insertCategoriesError } = await supabase
-          .from('observation_categories')
-          .insert(
-            selectedCategories.map(categoryId => ({
-              observation_id: id,
-              category_id: categoryId
-            }))
-          );
-
-        if (insertCategoriesError) throw insertCategoriesError;
-      }
-
-      // Handle action plans
-      // First delete all existing action plans for this observation
-      const { error: deleteAllError } = await supabase
-        .from('action_plans')
-        .delete()
-        .eq('observation_id', id);
-
-      if (deleteAllError) throw deleteAllError;
-
-      // Then insert all current action plans
-      if (actionPlans.length > 0) {
-        const actionPlansToInsert = actionPlans.map(plan => {
-          const { id: _, ...planWithoutId } = plan;
-          return {
-            ...planWithoutId,
-            observation_id: id,
-            created_by: user.id
-          };
-        });
-
-        const { error: insertError } = await supabase
-          .from('action_plans')
-          .insert(actionPlansToInsert);
-
-        if (insertError) throw insertError;
-      }
-
-      // Clear the deleted action plans list after successful save
-      setDeletedActionPlanIds([]);
-      toast.success('Report updated successfully');
+      toast.success('Changes saved successfully');
       navigate('/');
     } catch (err) {
-      console.error('Update Error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to update report';
-      setError(errorMessage);
-      toast.error(errorMessage);
+      console.error('Error saving changes:', err);
+      toast.error('Failed to save changes');
     } finally {
       setSaving(false);
     }
@@ -836,6 +924,41 @@ export function ReportView() {
                     />
                   </div>
 
+                  {/* Supporting Image */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <lucide.Image className="h-5 w-5 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Supporting Image</label>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleActionPlanImageChange}
+                        className="hidden"
+                        id="action-plan-image-upload"
+                      />
+                      <label
+                        htmlFor="action-plan-image-upload"
+                        className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
+                      >
+                        Choose File
+                      </label>
+                      {actionPlanImageFile && (
+                        <span className="text-sm text-gray-500">{actionPlanImageFile.name}</span>
+                      )}
+                    </div>
+                    {actionPlanImagePreview && (
+                      <div className="mt-4">
+                        <img
+                          src={actionPlanImagePreview}
+                          alt="Preview"
+                          className="max-w-xs rounded-lg border border-gray-200"
+                        />
+                      </div>
+                    )}
+                  </div>
+
                   {/* Due Date */}
                   <div>
                     <div className="flex items-center gap-2 mb-2">
@@ -958,6 +1081,36 @@ export function ReportView() {
                                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                   />
                                 </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700">Supporting Image</label>
+                                  <div className="flex items-center gap-4 mt-1">
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={handleEditedActionPlanImageChange}
+                                      className="hidden"
+                                      id={`edit-action-plan-image-${index}`}
+                                    />
+                                    <label
+                                      htmlFor={`edit-action-plan-image-${index}`}
+                                      className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
+                                    >
+                                      Choose File
+                                    </label>
+                                    {editedActionPlanImageFile && (
+                                      <span className="text-sm text-gray-500">{editedActionPlanImageFile.name}</span>
+                                    )}
+                                  </div>
+                                  {(editedActionPlanImagePreview || editedActionPlan?.supporting_image) && (
+                                    <div className="mt-4">
+                                      <img
+                                        src={editedActionPlanImagePreview || `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${editedActionPlan?.supporting_image}`}
+                                        alt="Preview"
+                                        className="max-w-xs rounded-lg border border-gray-200"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
                                 <div className="flex justify-end space-x-2">
                                   <button
                                     onClick={handleCancelEditActionPlan}
@@ -980,6 +1133,15 @@ export function ReportView() {
                                 <p>Responsible Person: {plan.responsible_person}</p>
                                 <p>Follow-up Contact: {plan.follow_up_contact}</p>
                                 <p>Status: {plan.status}</p>
+                                {plan.supporting_image && (
+                                  <div className="mt-4">
+                                    <img
+                                      src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${plan.supporting_image}`}
+                                      alt="Supporting image"
+                                      className="max-w-xs rounded-lg border border-gray-200"
+                                    />
+                                  </div>
+                                )}
                                 <div className="mt-4 flex justify-end space-x-2">
                                   <button
                                     onClick={() => handleEditActionPlan(index)}
@@ -988,7 +1150,11 @@ export function ReportView() {
                                     Edit
                                   </button>
                                   <button
-                                    onClick={() => handleDeleteActionPlan(index)}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleDeleteActionPlan(index);
+                                    }}
+                                    type="button"
                                     className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
                                   >
                                     Delete

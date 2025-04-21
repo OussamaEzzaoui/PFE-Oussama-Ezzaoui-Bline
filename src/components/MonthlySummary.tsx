@@ -42,7 +42,6 @@ interface MonthlySummary {
   risk_levels: Record<string, number>;
   trending_data: {
     categories: Record<string, number>;
-    avg_response_time: number;
   };
   created_at?: string;
   updated_at?: string;
@@ -95,6 +94,7 @@ export function MonthlySummary() {
         .single();
 
       if (error) throw error;
+      console.log('Loaded summary data:', data);
       setSummary(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load summary');
@@ -178,7 +178,6 @@ export function MonthlySummary() {
         const statsX = chartWidth + spacing * 2;
         pdf.text([
           `Total Observations: ${summary.total_observations}`,
-          `Average Response Time: ${summary.trending_data.avg_response_time} days`,
           `Month: ${format(parseISO(summary.month), 'MMMM yyyy')}`
         ], statsX, yOffset + spacing, { lineHeightFactor: 1.5 });
 
@@ -251,10 +250,28 @@ export function MonthlySummary() {
     return <div>No summary data available</div>;
   }
 
-  const actionStatusData = Object.entries(summary.action_status || {}).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
-    value
+  const actionStatusData = Object.entries(summary.report_status || {}).map(([name, value]) => {
+    console.log('Processing status:', name, value);
+    return {
+      name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
+      value: Number(value) || 0
+    };
+  });
+
+  // Ensure we have both open and closed statuses
+  const statusMap = {
+    'Open': Number(summary.report_status?.open || 0),
+    'Closed': Number(summary.report_status?.closed || 0)
+  };
+
+  console.log('Status map:', statusMap);
+
+  const normalizedActionStatusData = Object.entries(statusMap).map(([name, value]) => ({
+    name,
+    value: Number(value) || 0
   }));
+
+  console.log('Normalized data:', normalizedActionStatusData);
 
   const riskLevelsData = Object.entries(summary.risk_levels || {}).map(([name, value]) => ({
     name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
@@ -263,17 +280,6 @@ export function MonthlySummary() {
 
   const observationTypesData = Object.entries(summary.observation_types || {}).map(([name, value]) => ({
     name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
-    value
-  }));
-
-  // Ensure we have both open and closed statuses
-  const statusMap = {
-    'Open': actionStatusData.find(item => item.name.toLowerCase() === 'open')?.value || 0,
-    'Closed': actionStatusData.find(item => item.name.toLowerCase() === 'closed')?.value || 0
-  };
-
-  const normalizedActionStatusData = Object.entries(statusMap).map(([name, value]) => ({
-    name,
     value
   }));
 
@@ -327,7 +333,7 @@ export function MonthlySummary() {
         </div>
 
         <div className="bg-white p-6 rounded-lg shadow print:shadow-none">
-          <h3 className="text-lg font-semibold mb-4">Action Status</h3>
+          <h3 className="text-lg font-semibold mb-4">Report Status</h3>
           <div className="w-full h-[400px] flex items-center justify-center" ref={actionStatusChartRef}>
             <ResponsiveContainer width="100%" height={350}>
               <BarChart 
@@ -347,7 +353,14 @@ export function MonthlySummary() {
                     position: 'top',
                     content: ({ value }) => value || '0'
                   }}
-                />
+                >
+                  {normalizedActionStatusData.map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={entry.name === 'Open' ? '#FF8042' : '#00C49F'} 
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -386,10 +399,6 @@ export function MonthlySummary() {
             <div className="flex justify-between">
               <span className="font-medium">Total Observations:</span>
               <span className="font-bold">{summary.total_observations}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="font-medium">Average Response Time:</span>
-              <span className="font-bold">{summary.trending_data.avg_response_time} days</span>
             </div>
             <div className="flex justify-between">
               <span className="font-medium">Month:</span>

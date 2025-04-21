@@ -1,12 +1,11 @@
 /*
-  # Fix save_observation function
+  # Cleanup duplicate migrations and consolidate save_observation function
 
-  1. Changes
-    - Fix parameter order and default values
-    - Add proper validation for required fields
-    - Improve error handling
-    - Add proper type casting and null handling
-    - Grant proper permissions
+  1. Cleanup
+    - Remove duplicate save_observation function definitions
+    - Consolidate all changes into a single, clean function definition
+    - Ensure proper error handling and validation
+    - Set up proper security permissions
 
   2. Security
     - Function runs with SECURITY DEFINER
@@ -15,11 +14,11 @@
     - Execute permission granted to authenticated users only
 */
 
--- Drop existing functions to avoid conflicts
+-- Drop all existing versions of the function
 DROP FUNCTION IF EXISTS save_observation(JSON, JSON, UUID);
 DROP FUNCTION IF EXISTS save_observation(JSON, UUID, JSON);
 
--- Create the function with proper syntax and validation
+-- Create a single, consolidated version of the function
 CREATE OR REPLACE FUNCTION save_observation(
   p_observation JSON,
   p_user_id UUID,
@@ -27,6 +26,7 @@ CREATE OR REPLACE FUNCTION save_observation(
 ) RETURNS JSON AS $$
 DECLARE
   v_result RECORD;
+  v_observation_id UUID;
 BEGIN
   -- Validate required fields
   IF p_observation->>'project_id' IS NULL THEN
@@ -78,7 +78,36 @@ BEGIN
     NULLIF(p_observation->>'supporting_image', ''),
     p_user_id
   )
-  RETURNING * INTO v_result;
+  RETURNING id INTO v_observation_id;
+
+  -- Handle action plans if provided
+  IF p_action_plans IS NOT NULL THEN
+    -- Delete existing action plans for this observation
+    DELETE FROM action_plans WHERE observation_id = v_observation_id;
+    
+    -- Insert new action plans
+    INSERT INTO action_plans (
+      observation_id,
+      action,
+      due_date,
+      responsible_person,
+      follow_up_contact,
+      status,
+      created_by
+    )
+    SELECT 
+      v_observation_id,
+      (plan->>'action')::TEXT,
+      (plan->>'due_date')::DATE,
+      (plan->>'responsible_person')::TEXT,
+      (plan->>'follow_up_contact')::TEXT,
+      COALESCE((plan->>'status')::TEXT, 'open'),
+      p_user_id
+    FROM json_array_elements(p_action_plans) AS plan;
+  END IF;
+
+  -- Get the complete result
+  SELECT * INTO v_result FROM observation_details WHERE id = v_observation_id;
 
   -- Return the result as JSON
   RETURN row_to_json(v_result);
@@ -89,4 +118,4 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Grant execute permission to authenticated users
-GRANT EXECUTE ON FUNCTION save_observation(JSON, UUID, JSON) TO authenticated;
+GRANT EXECUTE ON FUNCTION save_observation(JSON, UUID, JSON) TO authenticated; 
