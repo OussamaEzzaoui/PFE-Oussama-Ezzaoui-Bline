@@ -329,6 +329,12 @@ export function SafetyReportsTable() {
             <tr>
               <th
                 scope="col"
+                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+              >
+                Report ID
+              </th>
+              <th
+                scope="col"
                 className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
                 onClick={() => handleSort('date')}
               >
@@ -384,7 +390,7 @@ export function SafetyReportsTable() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {reports.map((report) => (
+            {reports.map((report, index) => (
               <tr
                 key={report.id}
                 onClick={() => handleRowClick(report)}
@@ -392,6 +398,9 @@ export function SafetyReportsTable() {
                   selectedReport?.id === report.id ? 'bg-green-50' : ''
                 }`}
               >
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {index + 1}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   {format(parseISO(report.date), 'PPP')}
                 </td>

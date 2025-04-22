@@ -326,7 +326,6 @@ export function MonthlySummary() {
                   ))}
                 </Pie>
                 <Tooltip />
-                <Legend verticalAlign="bottom" height={36} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -338,13 +337,12 @@ export function MonthlySummary() {
             <ResponsiveContainer width="100%" height={350}>
               <BarChart 
                 data={normalizedActionStatusData}
-                margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
+                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
-                <Legend verticalAlign="top" height={36} />
                 <Bar 
                   dataKey="value" 
                   fill="#8884d8" 
@@ -372,13 +370,12 @@ export function MonthlySummary() {
             <ResponsiveContainer width="100%" height={350}>
               <BarChart 
                 data={riskLevelsData}
-                margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
+                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
-                <Legend verticalAlign="top" height={36} />
                 <Bar 
                   dataKey="value" 
                   fill="#ff8042" 
