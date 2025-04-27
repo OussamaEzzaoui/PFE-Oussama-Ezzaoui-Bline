@@ -78,11 +78,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   const [reportData, setReportData] = useState<any>(null);
 
   const handleCategorySelect = (categoryId: string) => {
-    setSelectedCategories(prev => 
-      prev.includes(categoryId) 
-        ? prev.filter(id => id !== categoryId) 
-        : [...prev, categoryId]
-    );
+    setSelectedCategories([categoryId]);
   };
 
   useEffect(() => {
@@ -569,6 +565,10 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
 
                 {/* Safety Categories */}
                 <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <lucide.ShieldAlert className="h-5 w-5 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Safety Categories</label>
+                  </div>
                   <SafetyCategories
                     selectedCategories={selectedCategories}
                     onSelectCategory={handleCategorySelect}

@@ -11,7 +11,7 @@ interface SafetyCategoriesProps {
   }>;
   error?: string;
 }
-
+// I edited the Lucid icons to match my new safety categories
 const iconMap: Record<string, keyof typeof lucide> = {
   'hard-hat': 'HardHat',
   'flame': 'Flame',
@@ -19,19 +19,27 @@ const iconMap: Record<string, keyof typeof lucide> = {
   'tool': 'Wrench',
   'truck': 'Truck',
   'construction': 'Construction',
-  'zap': 'Zap'
+  'zap': 'Zap',
+  'shield-off': 'ShieldOff',
+  'arrow-up': 'ArrowUp',
+  'square': 'Square',
+  'car': 'Car',
+  'flask-conical': 'FlaskConical',
+  'plug': 'Plug',
+  'target': 'Target',
+  'arrow-up-from-line': 'ArrowUpFromLine',
+  'file-check': 'FileCheck',
 };
 
 export function SafetyCategories({ selectedCategories, onSelectCategory, categories, error }: SafetyCategoriesProps) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <lucide.ShieldAlert className="h-5 w-5 text-green-600" />
-        <label className="text-sm font-medium text-gray-700">Safety Categories</label>
-      </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {categories.map((category) => {
-          const Icon = lucide[iconMap[category.icon] || 'AlertCircle'];
+          // Get the icon component from lucide, fallback to AlertCircle if not found
+          const Icon = lucide[iconMap[category.icon] || 'AlertCircle'] as React.ElementType;
+
+          // Only allow one selected category
           const isSelected = selectedCategories.includes(category.id);
 
           return (
