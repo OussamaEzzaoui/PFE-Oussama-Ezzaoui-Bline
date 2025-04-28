@@ -10,6 +10,7 @@ import type { SafetyCategory, Project, Company } from '../lib/types';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { SafetyReportPDF } from '../components/SafetyReportPDF';
 import { format } from 'date-fns';
+import OCPLogo from '../images/OCP_Group.svg.png';
 
 interface ActionPlan {
   id?: string;
@@ -396,7 +397,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <lucide.Shield className="h-8 w-8 text-green-600" />
+            <img src={OCPLogo} alt="OCP Logo" className="h-8 w-8 object-contain" />
             <h1 className="text-2xl font-bold text-gray-900">Safety Observation Report</h1>
           </div>
           <div className="flex items-center gap-4">

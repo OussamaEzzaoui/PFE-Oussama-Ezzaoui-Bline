@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import * as lucide from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { LucideIcon } from 'lucide-react';
+import OCPLogo from '../images/OCP_Group.svg.png';
 
 interface NavItem {
   path: string;
@@ -161,10 +162,8 @@ export function Sidebar() {
       {/* Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200">
         <div className="flex items-center gap-2">
-          <lucide.Shield className="h-8 w-8 text-green-600" />
-          {!isCollapsed && (
-            <span className="font-semibold text-gray-900">Safety Portal</span>
-          )}
+          <img src={OCPLogo} alt="OCP Logo" className="h-8 w-8 object-contain" />
+          <span className={`font-semibold text-gray-900 transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto'}`}>Safety Portal</span>
         </div>
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
