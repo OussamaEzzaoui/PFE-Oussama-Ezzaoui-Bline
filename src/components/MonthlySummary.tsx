@@ -258,10 +258,14 @@ export function MonthlySummary() {
     };
   });
 
-  // Ensure we have both open and closed statuses
+  // Normalize report_status keys to lowercase
+  const reportStatus = Object.fromEntries(
+    Object.entries(summary.report_status || {}).map(([k, v]) => [k.toLowerCase(), v])
+  );
+
   const statusMap = {
-    'Open': Number(summary.report_status?.open || 0),
-    'Closed': Number(summary.report_status?.closed || 0)
+    'Open': Number(reportStatus['open'] || 0),
+    'Closed': Number(reportStatus['closed'] || 0)
   };
 
   console.log('Status map:', statusMap);

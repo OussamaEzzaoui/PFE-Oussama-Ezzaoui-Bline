@@ -9,6 +9,8 @@ import { ReportView } from './pages/ReportView';
 import { NotFound } from './pages/NotFound';
 import { MonthlySummary } from './components/MonthlySummary';
 import { NewSafetyReport } from './pages/NewSafetyReport';
+import { MyReports } from './pages/MyReports';
+import { WeeklyReport } from './pages/WeeklyReport';
 
 // Protected route wrapper
 const ProtectedRoute = ({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) => {
@@ -92,6 +94,28 @@ function App() {
               <ProtectedRoute adminOnly>
                 <Layout>
                   <Admin />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/my-reports"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <MyReports />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/weekly-report"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <WeeklyReport />
                 </Layout>
               </ProtectedRoute>
             }

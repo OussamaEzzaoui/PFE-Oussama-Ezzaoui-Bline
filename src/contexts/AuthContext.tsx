@@ -17,11 +17,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Helper to fetch profile and set admin status
+    const fetchProfileAndSetAdmin = async (user: any) => {
+      if (!user) {
+        setIsAdmin(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+      if (!error && data?.role === 'admin') {
+        setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
+      }
+    };
+
     // Check active sessions and sets the user
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUser(session.user);
-        setIsAdmin(session.user.user_metadata?.is_admin ?? false);
+        fetchProfileAndSetAdmin(session.user);
       }
       setLoading(false);
     });
@@ -30,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setUser(session.user);
-        setIsAdmin(session.user.user_metadata?.is_admin ?? false);
+        fetchProfileAndSetAdmin(session.user);
       } else {
         setUser(null);
         setIsAdmin(false);

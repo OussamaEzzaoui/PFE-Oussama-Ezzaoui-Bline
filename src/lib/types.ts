@@ -92,6 +92,7 @@ export interface SafetyReport {
   consequences: string;
   status: string;
   created_at: string;
+  created_by: string;
   projects: { id: string; name: string };
   companies: { id: string; name: string };
   action_plans: {

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { SafetyReportPDF } from './SafetyReportPDF';
 import type { SafetyReport } from '../lib/types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface FilterOptions {
   dateRange: {
@@ -66,6 +67,7 @@ function DeleteModal({ report, onConfirm, onCancel }: DeleteModalProps) {
 
 export function SafetyReportsTable() {
   const navigate = useNavigate();
+  const { isAdmin, user } = useAuth();
   const [reports, setReports] = useState<SafetyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -109,6 +111,7 @@ export function SafetyReportsTable() {
           consequences,
           status,
           created_at,
+          created_by,
           projects(id, name),
           companies(id, name),
           action_plans(
@@ -445,16 +448,18 @@ export function SafetyReportsTable() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="flex items-center gap-4">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/reports/${report.id}`);
-                      }}
-                      className="text-green-600 hover:text-green-700 flex items-center gap-1"
-                    >
-                      <lucide.Edit className="h-4 w-4" />
-                      Edit
-                    </button>
+                    {report.created_by === user.id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/reports/${report.id}`);
+                        }}
+                        className="text-green-600 hover:text-green-700 flex items-center gap-1"
+                      >
+                        <lucide.Edit className="h-4 w-4" />
+                        Edit
+                      </button>
+                    )}
                     <PDFDownloadLink
                       document={<SafetyReportPDF report={{
                         project: { id: report.projects.id, name: report.projects.name },
@@ -497,16 +502,18 @@ export function SafetyReportsTable() {
                         );
                       }}
                     </PDFDownloadLink>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(report);
-                      }}
-                      className="text-red-600 hover:text-red-700 flex items-center gap-1"
-                    >
-                      <lucide.Trash2 className="h-4 w-4" />
-                      Delete
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(report);
+                        }}
+                        className="text-red-600 hover:text-red-700 flex items-center gap-1"
+                      >
+                        <lucide.Trash2 className="h-4 w-4" />
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import * as lucide from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
+type Project = { id: number; name: string };
+
 export function ProjectsManager() {
-  const [projects, setProjects] = useState([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [newProject, setNewProject] = useState({ name: '' });
-  const [editingProject, setEditingProject] = useState(null);
+  const [newProject, setNewProject] = useState<{ name: string }>({ name: '' });
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   useEffect(() => {
     loadProjects();

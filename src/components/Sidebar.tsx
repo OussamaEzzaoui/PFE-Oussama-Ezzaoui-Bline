@@ -26,6 +26,16 @@ export function Sidebar() {
       icon: lucide.ClipboardList,
     },
     {
+      path: '/my-reports',
+      label: 'My Reports',
+      icon: lucide.User,
+    },
+    {
+      path: '/weekly-report',
+      label: 'Weekly Report',
+      icon: lucide.Calendar,
+    },
+    {
       path: '/stats',
       label: 'Statistics',
       icon: lucide.BarChart2,

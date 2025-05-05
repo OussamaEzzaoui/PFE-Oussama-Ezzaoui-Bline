@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import * as lucide from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
+type Company = { id: number; name: string };
+
 export function CompaniesManager() {
-  const [companies, setCompanies] = useState([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [newCompany, setNewCompany] = useState({ name: '' });
-  const [editingCompany, setEditingCompany] = useState(null);
+  const [newCompany, setNewCompany] = useState<{ name: string }>({ name: '' });
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
   useEffect(() => {
     loadCompanies();
@@ -54,7 +56,7 @@ export function CompaniesManager() {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: number) => {
     try {
       const { error } = await supabase
         .from('companies')
