@@ -22,6 +22,25 @@ import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import { Download, Filter, Calendar } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { Bar as ChartJSBar } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title as ChartJSTitle,
+  Tooltip as ChartJSTooltip,
+  Legend as ChartJSLegend,
+} from 'chart.js';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ChartJSTitle,
+  ChartJSTooltip,
+  ChartJSLegend
+);
 
 interface FilterOptions {
   department?: string;
@@ -58,6 +77,11 @@ export function MonthlySummary() {
       end: new Date(),
     },
   });
+  const [monthlyCategoryData, setMonthlyCategoryData] = useState<any[]>([]);
+  const [monthlyCategoryLabels, setMonthlyCategoryLabels] = useState<string[]>([]);
+  const [monthlyCategorySeverityMap, setMonthlyCategorySeverityMap] = useState<Record<string, Record<string, number>>>({});
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
 
   const pieChartRef = useRef<HTMLDivElement>(null);
   const actionStatusChartRef = useRef<HTMLDivElement>(null);
@@ -65,8 +89,15 @@ export function MonthlySummary() {
 
   useEffect(() => {
     loadSafetyCategories();
-    loadSummary();
-  }, [filters]);
+    loadAvailableMonths();
+  }, []);
+
+  useEffect(() => {
+    if (selectedMonth) {
+      loadSummary(selectedMonth);
+      fetchMonthlyCategoryData(selectedMonth);
+    }
+  }, [selectedMonth]);
 
   const loadSafetyCategories = async () => {
     try {
@@ -83,18 +114,27 @@ export function MonthlySummary() {
     }
   };
 
-  const loadSummary = async () => {
+  const loadAvailableMonths = async () => {
+    const { data, error } = await supabase
+      .from('monthly_observation_stats')
+      .select('month')
+      .order('month', { ascending: false });
+    if (!error && data) {
+      const months = data.map((row: any) => row.month);
+      setAvailableMonths(months);
+      if (months.length > 0) setSelectedMonth(months[0]);
+    }
+  };
+
+  const loadSummary = async (month: string) => {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('monthly_observation_stats')
         .select('*')
-        .order('month', { ascending: false })
-        .limit(1)
+        .eq('month', month)
         .single();
-
       if (error) throw error;
-      console.log('Loaded summary data:', data);
       setSummary(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load summary');
@@ -229,6 +269,109 @@ export function MonthlySummary() {
     }
   };
 
+  const fetchMonthlyCategoryData = async (month: string) => {
+    if (!month) return;
+    const monthStart = startOfMonth(new Date(month));
+    const monthEnd = endOfMonth(new Date(month));
+
+    // Get all categories
+    const { data: allCategories } = await supabase
+      .from('safety_categories')
+      .select('id, name');
+    const categoryMap = new Map(allCategories?.map(cat => [cat.id, cat.name]) || []);
+    const allCategoryLabels = Array.from(categoryMap.values());
+
+    // Fetch all observations for the month with their categories and severity
+    const { data: categoryData } = await supabase
+      .from('observation_details')
+      .select(`
+        id,
+        consequences,
+        created_at,
+        observation_categories (
+          category_id,
+          safety_categories (
+            id,
+            name
+          )
+        )
+      `)
+      .gte('created_at', format(monthStart, 'yyyy-MM-dd'))
+      .lte('created_at', format(monthEnd, 'yyyy-MM-dd'));
+
+    // Aggregate counts
+    const categorySeverityMap: Record<string, Record<string, number>> = {};
+    allCategoryLabels.forEach(category => {
+      categorySeverityMap[category] = { minor: 0, moderate: 0, major: 0, severe: 0 };
+    });
+    (categoryData || []).forEach((row: any) => {
+      if (!row.consequences) return;
+      row.observation_categories?.forEach((cat: any) => {
+        const categoryName = cat.safety_categories?.name;
+        if (!categoryName) return;
+        categorySeverityMap[categoryName][row.consequences] =
+          (categorySeverityMap[categoryName][row.consequences] || 0) + 1;
+      });
+    });
+    setMonthlyCategoryLabels(allCategoryLabels);
+    setMonthlyCategorySeverityMap(categorySeverityMap);
+  };
+
+  // Prepare chart data
+  const monthlyChartData = {
+    labels: monthlyCategoryLabels,
+    datasets: [
+      {
+        label: 'High Severity',
+        data: monthlyCategoryLabels.map(cat => monthlyCategorySeverityMap[cat]?.major + monthlyCategorySeverityMap[cat]?.severe),
+        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+      },
+      {
+        label: 'Medium Severity',
+        data: monthlyCategoryLabels.map(cat => monthlyCategorySeverityMap[cat]?.moderate),
+        backgroundColor: 'rgba(255, 206, 86, 0.5)',
+      },
+      {
+        label: 'Low Severity',
+        data: monthlyCategoryLabels.map(cat => monthlyCategorySeverityMap[cat]?.minor),
+        backgroundColor: 'rgba(75, 192, 192, 0.5)',
+      },
+    ],
+  };
+
+  const monthlyChartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+      title: {
+        display: true,
+        text: `Safety Categories by Severity - ${summary ? format(parseISO(summary.month), 'MMMM yyyy') : ''}`,
+      },
+    },
+    scales: {
+      y: {
+        min: 0,
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Number of Reports',
+        },
+        ticks: {
+          stepSize: 1,
+          precision: 0
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Safety Category',
+        },
+      },
+    },
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -258,9 +401,9 @@ export function MonthlySummary() {
     };
   });
 
-  // Normalize report_status keys to lowercase
+  // Normalize report_status keys to lowercase and trim whitespace
   const reportStatus = Object.fromEntries(
-    Object.entries(summary.report_status || {}).map(([k, v]) => [k.toLowerCase(), v])
+    Object.entries(summary.report_status || {}).map(([k, v]) => [k.trim().toLowerCase(), v])
   );
 
   const statusMap = {
@@ -282,13 +425,27 @@ export function MonthlySummary() {
     value
   }));
 
-  const observationTypesData = Object.entries(summary.observation_types || {}).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
-    value
-  }));
-
   return (
     <div className="space-y-6">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold">Monthly Summary</h2>
+        <div className="flex gap-2 items-center">
+          <label htmlFor="month-select" className="mr-2 font-medium">Month:</label>
+          <select
+            id="month-select"
+            value={selectedMonth || ''}
+            onChange={e => setSelectedMonth(e.target.value)}
+            className="border rounded-md px-3 py-2"
+          >
+            {availableMonths.map(month => (
+              <option key={month} value={month}>
+                {format(new Date(month), 'MMMM yyyy')}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Monthly Summary</h2>
         <div className="flex gap-2">
@@ -310,28 +467,11 @@ export function MonthlySummary() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Monthly Safety Categories by Severity Chart - now at the top, replacing the old pie chart */}
         <div className="bg-white p-6 rounded-lg shadow print:shadow-none">
-          <h3 className="text-lg font-semibold mb-4">Observation Types Distribution</h3>
-          <div className="w-full h-[400px] flex items-center justify-center" ref={pieChartRef}>
-            <ResponsiveContainer width="100%" height={350}>
-              <PieChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                <Pie
-                  data={observationTypesData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={true}
-                  label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                  outerRadius={120}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {observationTypesData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+          <h3 className="text-lg font-semibold mb-4">Safety Categories by Severity (Monthly)</h3>
+          <div className="h-[400px]">
+            <ChartJSBar data={monthlyChartData} options={monthlyChartOptions} />
           </div>
         </div>
 
@@ -378,7 +518,13 @@ export function MonthlySummary() {
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
-                <YAxis />
+                <YAxis 
+                  domain={[0, 'auto']}
+                  tickCount={10}
+                  allowDecimals={false}
+                  tick={{ fontSize: 12 }}
+                  interval={0}
+                />
                 <Tooltip />
                 <Bar 
                   dataKey="value" 
