@@ -79,7 +79,11 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   const [reportData, setReportData] = useState<any>(null);
 
   const handleCategorySelect = (categoryId: string) => {
-    setSelectedCategories([categoryId]);
+    setSelectedCategories(prev =>
+      prev.includes(categoryId)
+        ? prev.filter(id => id !== categoryId)
+        : [...prev, categoryId]
+    );
   };
 
   useEffect(() => {
@@ -500,6 +504,27 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     />
                     {validationErrors.submitterName && (
                       <p className="text-red-500 text-sm mt-1">{validationErrors.submitterName}</p>
+                    )}
+                  </div>
+
+                  {/* Department */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <lucide.Users2 className="h-5 w-5 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Department</label>
+                    </div>
+                    <input
+                      type="text"
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      placeholder="Enter department"
+                      required
+                      className={`w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+                        validationErrors.department ? 'border-red-500' : ''
+                      }`}
+                    />
+                    {validationErrors.department && (
+                      <p className="text-red-500 text-sm mt-1">{validationErrors.department}</p>
                     )}
                   </div>
 

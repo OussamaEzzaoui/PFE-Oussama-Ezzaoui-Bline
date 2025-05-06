@@ -147,8 +147,8 @@ export function SafetyReportsTable() {
       // Transform the data to include action plans
       const transformedData = (data || []).map(report => ({
         ...report,
-        projects: report.projects[0] || { name: '' },
-        companies: report.companies[0] || { name: '' },
+        projects: Array.isArray(report.projects) ? report.projects[0] || { id: '', name: '' } : report.projects || { id: '', name: '' },
+        companies: Array.isArray(report.companies) ? report.companies[0] || { id: '', name: '' } : report.companies || { id: '', name: '' },
         action_plans: (report.action_plans || []).map(plan => ({
           ...plan,
           status: plan.status.toLowerCase() as 'open' | 'closed'
@@ -239,13 +239,6 @@ export function SafetyReportsTable() {
         </div>
         <div className="flex items-center gap-4">
           <button
-            onClick={exportToCSV}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <lucide.FileSpreadsheet className="h-5 w-5" />
-            Export CSV
-          </button>
-          <button
             onClick={() => navigate('/reports/new')}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
           >
@@ -326,19 +319,19 @@ export function SafetyReportsTable() {
       </div>
 
       {/* Table */}
-      <div className="bg-white shadow-sm rounded-lg overflow-hidden">
+      <div className="bg-white shadow-sm rounded-lg overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
                 Report ID
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
                 onClick={() => handleSort('date')}
               >
                 <div className="flex items-center gap-1">
@@ -352,13 +345,13 @@ export function SafetyReportsTable() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
               >
                 Report Details
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
                 onClick={() => handleSort('consequences')}
               >
                 <div className="flex items-center gap-1">
@@ -372,7 +365,7 @@ export function SafetyReportsTable() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
                 onClick={() => handleSort('status')}
               >
                 <div className="flex items-center gap-1">
@@ -386,7 +379,7 @@ export function SafetyReportsTable() {
               </th>
               <th
                 scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[90px]"
               >
                 Actions
               </th>
@@ -401,13 +394,13 @@ export function SafetyReportsTable() {
                   selectedReport?.id === report.id ? 'bg-green-50' : ''
                 }`}
               >
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">
                   {index + 1}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-900">
                   {format(parseISO(report.date), 'PPP')}
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-2 py-3">
                   <div className="text-sm text-gray-900 font-medium">
                     {report.subject}
                   </div>
@@ -420,7 +413,7 @@ export function SafetyReportsTable() {
                     Submitted by: {report.submitter_name}
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-2 py-3 whitespace-nowrap">
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       report.consequences === 'severe'
@@ -435,7 +428,7 @@ export function SafetyReportsTable() {
                     {report.consequences}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-2 py-3 whitespace-nowrap">
                   <span
                     className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       report.status === 'open'
@@ -446,15 +439,15 @@ export function SafetyReportsTable() {
                     {report.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <div className="flex items-center gap-4">
-                    {report.created_by === user.id && (
+                <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 min-w-[90px]">
+                  <div className="flex items-center gap-2 flex-nowrap">
+                    {(isAdmin || report.created_by === user.id) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           navigate(`/reports/${report.id}`);
                         }}
-                        className="text-green-600 hover:text-green-700 flex items-center gap-1"
+                        className="text-green-600 hover:text-green-700 flex items-center gap-1 px-1 py-0.5 rounded"
                       >
                         <lucide.Edit className="h-4 w-4" />
                         Edit
@@ -482,7 +475,7 @@ export function SafetyReportsTable() {
                         }))
                       }} />}
                       fileName={`safety-report-${report.id}-${format(new Date(), 'yyyy-MM-dd')}.pdf`}
-                      className="text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                      className="text-blue-600 hover:text-blue-700 flex items-center gap-1 px-1 py-0.5 rounded"
                     >
                       {({ blob, url, loading, error }) => {
                         if (error) {
@@ -508,7 +501,7 @@ export function SafetyReportsTable() {
                           e.stopPropagation();
                           handleDelete(report);
                         }}
-                        className="text-red-600 hover:text-red-700 flex items-center gap-1"
+                        className="text-red-600 hover:text-red-700 flex items-center gap-1 px-1 py-0.5 rounded"
                       >
                         <lucide.Trash2 className="h-4 w-4" />
                         Delete

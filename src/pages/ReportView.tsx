@@ -562,25 +562,14 @@ export function ReportView() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => navigate('/')}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <lucide.ArrowLeft className="h-6 w-6" />
-              </button>
-              <h1 className="text-2xl font-bold text-gray-900">Edit Safety Report</h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowExport(true)}
-                className="px-4 py-2 text-green-600 hover:text-green-700 flex items-center gap-2"
-              >
-                <lucide.Download className="h-5 w-5" />
-                Export
-              </button>
-            </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate('/')}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <lucide.ArrowLeft className="h-6 w-6" />
+            </button>
+            <h1 className="text-2xl font-bold text-gray-900">Edit Safety Report</h1>
           </div>
         </div>
 
@@ -1191,14 +1180,6 @@ export function ReportView() {
           </div>
         </form>
       </div>
-
-      {/* Export Modal */}
-      {showExport && (
-        <ExportReport
-          data={report}
-          onClose={() => setShowExport(false)}
-        />
-      )}
     </div>
   );
 }

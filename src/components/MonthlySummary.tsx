@@ -427,7 +427,7 @@ export function MonthlySummary() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Monthly Summary</h2>
         <div className="flex gap-2 items-center">
           <label htmlFor="month-select" className="mr-2 font-medium">Month:</label>

@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import * as lucide from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
+
+type User = {
+  user_id: string;
+  username: string | null;
+  role: string;
+  created_at: string;
+};
 
 export function UsersManager() {
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const { user } = useAuth();
 
   useEffect(() => {
     loadUsers();
@@ -13,9 +22,12 @@ export function UsersManager() {
 
   const loadUsers = async () => {
     try {
-      const { data, error } = await supabase.auth.admin.listUsers();
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_id, username, role, created_at')
+        .order('created_at', { ascending: true });
       if (error) throw error;
-      setUsers(data.users);
+      setUsers(data || []);
     } catch (err) {
       setError('Failed to load users');
     } finally {
@@ -23,13 +35,13 @@ export function UsersManager() {
     }
   };
 
-  const toggleAdmin = async (user) => {
+  const toggleAdmin = async (user: User) => {
     try {
-      const { error } = await supabase.auth.admin.updateUserById(
-        user.id,
-        { user_metadata: { is_admin: !user.user_metadata?.is_admin } }
-      );
-
+      const newRole = user.role === 'admin' ? 'normal' : 'admin';
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('user_id', user.user_id);
       if (error) throw error;
       loadUsers();
     } catch (err) {
@@ -60,24 +72,26 @@ export function UsersManager() {
 
       <div className="bg-white shadow-sm rounded-lg">
         <ul className="divide-y divide-gray-200">
-          {users.map((user) => (
-            <li key={user.id} className="p-4 flex items-center justify-between">
+          {users.map((userItem) => (
+            <li key={userItem.user_id} className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-gray-900">{user.email}</p>
+                <p className="text-gray-900">{userItem.username || userItem.user_id}</p>
                 <p className="text-sm text-gray-500">
-                  {user.user_metadata?.is_admin ? 'Admin' : 'User'}
+                  {userItem.role === 'admin' ? 'Admin' : 'User'}
                 </p>
+                <p className="text-xs text-gray-400">Created: {userItem.created_at ? new Date(userItem.created_at).toLocaleString() : ''}</p>
               </div>
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => toggleAdmin(user)}
+                  onClick={() => toggleAdmin(userItem)}
+                  disabled={userItem.user_id === user.id}
                   className={`px-3 py-1 rounded-full text-sm ${
-                    user.user_metadata?.is_admin
+                    userItem.role === 'admin'
                       ? 'bg-red-100 text-red-700 hover:bg-red-200'
                       : 'bg-green-100 text-green-700 hover:bg-green-200'
-                  }`}
+                  } ${userItem.user_id === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {user.user_metadata?.is_admin ? 'Remove Admin' : 'Make Admin'}
+                  {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
                 </button>
               </div>
             </li>

@@ -31,11 +31,6 @@ export function Sidebar() {
       icon: lucide.User,
     },
     {
-      path: '/weekly-report',
-      label: 'Weekly Report',
-      icon: lucide.Calendar,
-    },
-    {
       path: '/stats',
       label: 'Statistics',
       icon: lucide.BarChart2,
@@ -44,13 +39,13 @@ export function Sidebar() {
           path: '/stats/monthly',
           label: 'Monthly Summary',
           icon: lucide.CalendarRange,
-        }
+        },
+        {
+          path: '/weekly-report',
+          label: 'Weekly Report',
+          icon: lucide.Calendar,
+        },
       ],
-    },
-    {
-      path: '/categories',
-      label: 'Safety Categories',
-      icon: lucide.Tags,
     },
     ...(isAdmin
       ? [
