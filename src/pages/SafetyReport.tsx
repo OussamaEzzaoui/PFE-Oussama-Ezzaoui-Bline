@@ -658,10 +658,8 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     className={`select-field ${validationErrors.reportGroup ? 'border-red-500' : ''}`}
                   >
                     <option value="">Select Group</option>
-                    <option value="operations">Operations</option>
-                    <option value="maintenance">Maintenance</option>
-                    <option value="safety">Safety</option>
-                    <option value="contractors">Contractors</option>
+                    <option value="finding">Finding</option>
+                    <option value="positive">Positive</option>
                   </select>
                   {validationErrors.reportGroup && (
                     <p className="text-red-500 text-sm">{validationErrors.reportGroup}</p>

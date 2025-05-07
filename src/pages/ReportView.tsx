@@ -449,35 +449,31 @@ export function ReportView() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Delete only the action plans that were marked for deletion
-      if (deletedActionPlanIds.length > 0) {
-        const { error: deleteError } = await supabase
-          .from('action_plans')
-          .delete()
-          .in('id', deletedActionPlanIds);
-
-        if (deleteError) throw deleteError;
+      // Validate required fields
+      if (!project || !company || !submitterName || !date || !time || !location || !description || !reportGroup || !consequences || !likelihood || !subject) {
+        toast.error('Please fill in all required fields');
+        return;
       }
 
-      // Insert only new action plans (those without an ID or with temp ID)
-      const newActionPlans = actionPlans.filter(plan => !plan.id || plan.id.startsWith('temp-'));
-      if (newActionPlans.length > 0) {
-        const { error: insertError } = await supabase
-          .from('action_plans')
-          .insert(
-            newActionPlans.map(plan => ({
-              observation_id: id,
-              action: plan.action,
-              due_date: plan.due_date,
-              responsible_person: plan.responsible_person,
-              follow_up_contact: plan.follow_up_contact,
-              status: plan.status,
-              created_by: user.id,
-              created_at: new Date().toISOString()
-            }))
-          );
+      // Validate field values
+      if (!['SOR', 'SOP', 'RES'].includes(subject)) {
+        toast.error('Invalid subject value');
+        return;
+      }
 
-        if (insertError) throw insertError;
+      if (!['finding', 'positive'].includes(reportGroup)) {
+        toast.error('Invalid report group value');
+        return;
+      }
+
+      if (!['minor', 'moderate', 'major', 'severe'].includes(consequences)) {
+        toast.error('Invalid consequences value');
+        return;
+      }
+
+      if (!['unlikely', 'possible', 'likely', 'very-likely'].includes(likelihood)) {
+        toast.error('Invalid likelihood value');
+        return;
       }
 
       // Upload new image if exists
@@ -513,13 +509,45 @@ export function ReportView() {
         })
         .eq('id', id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Update error:', updateError);
+        throw updateError;
+      }
+
+      // Update categories
+      if (selectedCategories.length > 0) {
+        // First delete existing categories
+        const { error: deleteCategoriesError } = await supabase
+          .from('observation_categories')
+          .delete()
+          .eq('observation_id', id);
+
+        if (deleteCategoriesError) {
+          console.error('Delete categories error:', deleteCategoriesError);
+          throw deleteCategoriesError;
+        }
+
+        // Then insert new categories
+        const { error: insertCategoriesError } = await supabase
+          .from('observation_categories')
+          .insert(
+            selectedCategories.map(categoryId => ({
+              observation_id: id,
+              category_id: categoryId
+            }))
+          );
+
+        if (insertCategoriesError) {
+          console.error('Insert categories error:', insertCategoriesError);
+          throw insertCategoriesError;
+        }
+      }
 
       toast.success('Changes saved successfully');
       navigate('/');
     } catch (err) {
       console.error('Error saving changes:', err);
-      toast.error('Failed to save changes');
+      toast.error(err instanceof Error ? err.message : 'Failed to save changes');
     } finally {
       setSaving(false);
     }
@@ -745,10 +773,8 @@ export function ReportView() {
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 >
                   <option value="">Select Group</option>
-                  <option value="operations">Operations</option>
-                  <option value="maintenance">Maintenance</option>
-                  <option value="safety">Safety</option>
-                  <option value="contractors">Contractors</option>
+                  <option value="finding">Finding</option>
+                  <option value="positive">Positive</option>
                 </select>
               </div>
             </div>

@@ -234,7 +234,6 @@ export function SafetyReportsTable() {
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-sm p-4 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <lucide.Shield className="h-8 w-8 text-green-600" />
           <h1 className="text-2xl font-bold text-gray-900">Safety Reports</h1>
         </div>
         <div className="flex items-center gap-4">
