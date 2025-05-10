@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as lucide from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseAdmin } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
 type User = {
@@ -58,18 +58,48 @@ export function UsersManager() {
     setCreating(true);
     setCreateError('');
     try {
-      // TODO: Replace this with a secure API call or Edge Function
-      // This is a placeholder for demonstration only
-      const response = await fetch('/api/admin-create-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser),
+      console.log('Creating user with data:', { ...newUser, password: '[REDACTED]' });
+      
+      // Create the user in auth.users using the admin client
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: newUser.email,
+        password: newUser.password,
+        email_confirm: true,
+        user_metadata: {
+          username: newUser.username
+        }
       });
-      if (!response.ok) throw new Error('Failed to create user');
+
+      if (authError) {
+        console.error('Auth error:', authError);
+        throw authError;
+      }
+
+      console.log('User created successfully:', authData);
+
+      // Get the username from user_metadata (not from auth.users columns)
+      const createdUser = authData.user;
+      const username = createdUser?.user_metadata?.username || newUser.username;
+
+      // Create the profile record
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          user_id: createdUser.id,
+          username: username,
+          role: 'normal'
+        });
+
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
+        throw profileError;
+      }
+
       setShowCreateModal(false);
       setNewUser({ email: '', password: '', username: '' });
       loadUsers();
     } catch (err: any) {
+      console.error('Full error:', err);
       setCreateError(err.message || 'Failed to create user');
     } finally {
       setCreating(false);

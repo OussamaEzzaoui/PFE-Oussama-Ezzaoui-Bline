@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables:', {
@@ -13,12 +14,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Create a Supabase client with the anon key for regular operations
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Create a Supabase client with the service role key for admin operations
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-    storage: localStorage
+    autoRefreshToken: false,
+    persistSession: false
   }
 });
 
