@@ -77,23 +77,7 @@ export function UsersManager() {
 
       console.log('User created successfully:', authData);
 
-      // Get the username from user_metadata (not from auth.users columns)
-      const createdUser = authData.user;
-      const username = createdUser?.user_metadata?.username || newUser.username;
-
-      // Create the profile record
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: createdUser.id,
-          username: username,
-          role: 'normal'
-        });
-
-      if (profileError) {
-        console.error('Profile creation error:', profileError);
-        throw profileError;
-      }
+      // Do NOT insert into profiles here; let the trigger handle it
 
       setShowCreateModal(false);
       setNewUser({ email: '', password: '', username: '' });
@@ -103,6 +87,20 @@ export function UsersManager() {
       setCreateError(err.message || 'Failed to create user');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
+    try {
+      setLoading(true);
+      setError('');
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      loadUsers();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete user');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -213,6 +211,13 @@ export function UsersManager() {
                   } ${userItem.user_id === user.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {userItem.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
+                </button>
+                <button
+                  onClick={() => handleDeleteUser(userItem.user_id)}
+                  disabled={userItem.user_id === user.id}
+                  className="px-3 py-1 rounded-full text-sm bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Delete
                 </button>
               </div>
             </li>
