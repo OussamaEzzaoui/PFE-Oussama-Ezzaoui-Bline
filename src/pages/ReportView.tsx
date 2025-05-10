@@ -56,7 +56,7 @@ export function ReportView() {
   const [consequences, setConsequences] = useState('');
   const [likelihood, setLikelihood] = useState('');
   const [status, setStatus] = useState('open');
-  const [subject, setSubject] = useState<'SOR' | 'SOP' | 'RES'>('SOR');
+  const [subject, setSubject] = useState<'SOSV : Safety Observation Site Visit' | 'SOP' | 'RES'>('SOSV : Safety Observation Site Visit');
 
   const [editingActionPlanIndex, setEditingActionPlanIndex] = useState<number | null>(null);
   const [editedActionPlan, setEditedActionPlan] = useState<ActionPlan | null>(null);
@@ -456,7 +456,7 @@ export function ReportView() {
       }
 
       // Validate field values
-      if (!['SOR', 'SOP', 'RES'].includes(subject)) {
+      if (!['SOSV : Safety Observation Site Visit', 'SOP', 'RES'].includes(subject)) {
         toast.error('Invalid subject value');
         return;
       }
@@ -487,7 +487,7 @@ export function ReportView() {
         imagePath = imageData.path;
       }
 
-      // Update observation details
+      // Update the report
       const { error: updateError } = await supabase
         .from('observation_details')
         .update({
@@ -504,31 +504,42 @@ export function ReportView() {
           likelihood,
           status,
           subject,
-          supporting_image: imagePath,
-          updated_at: new Date().toISOString()
+          supporting_image: imagePath
         })
         .eq('id', id);
 
-      if (updateError) {
-        console.error('Update error:', updateError);
-        throw updateError;
+      if (updateError) throw updateError;
+
+      // If the report is being closed, update all action plans to closed
+      if (status === 'closed') {
+        const { error: actionPlansError } = await supabase
+          .from('action_plans')
+          .update({ status: 'closed' })
+          .eq('observation_id', id);
+
+        if (actionPlansError) throw actionPlansError;
+
+        // Update local state to reflect the changes
+        setActionPlans(prevPlans => 
+          prevPlans.map(plan => ({
+            ...plan,
+            status: 'closed'
+          }))
+        );
       }
 
       // Update categories
       if (selectedCategories.length > 0) {
         // First delete existing categories
-        const { error: deleteCategoriesError } = await supabase
+        const { error: deleteError } = await supabase
           .from('observation_categories')
           .delete()
           .eq('observation_id', id);
 
-        if (deleteCategoriesError) {
-          console.error('Delete categories error:', deleteCategoriesError);
-          throw deleteCategoriesError;
-        }
+        if (deleteError) throw deleteError;
 
         // Then insert new categories
-        const { error: insertCategoriesError } = await supabase
+        const { error: categoriesError } = await supabase
           .from('observation_categories')
           .insert(
             selectedCategories.map(categoryId => ({
@@ -537,17 +548,14 @@ export function ReportView() {
             }))
           );
 
-        if (insertCategoriesError) {
-          console.error('Insert categories error:', insertCategoriesError);
-          throw insertCategoriesError;
-        }
+        if (categoriesError) throw categoriesError;
       }
 
-      toast.success('Changes saved successfully');
+      toast.success('Report updated successfully');
       navigate('/');
     } catch (err) {
-      console.error('Error saving changes:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to save changes');
+      console.error('Error updating report:', err);
+      toast.error('Failed to update report');
     } finally {
       setSaving(false);
     }
@@ -728,10 +736,10 @@ export function ReportView() {
                 </label>
                 <select
                   value={subject}
-                  onChange={(e) => setSubject(e.target.value as 'SOR' | 'SOP' | 'RES')}
+                  onChange={(e) => setSubject(e.target.value as 'SOSV : Safety Observation Site Visit' | 'SOP' | 'RES')}
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 >
-                  <option value="SOR">Safety Observation Report (SOR)</option>
+                  <option value="SOSV : Safety Observation Site Visit">Safety Observation Site Visit (SOSV)</option>
                   <option value="SOP">Standard Operating Procedure (SOP)</option>
                   <option value="RES">Risk Evaluation Sheet (RES)</option>
                 </select>

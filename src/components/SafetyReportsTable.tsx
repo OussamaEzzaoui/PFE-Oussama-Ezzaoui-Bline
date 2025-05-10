@@ -440,7 +440,7 @@ export function SafetyReportsTable() {
                 </td>
                 <td className="px-2 py-3 whitespace-nowrap text-sm text-gray-500 min-w-[90px]">
                   <div className="flex items-center gap-2 flex-nowrap">
-                    {(isAdmin || report.created_by === user.id) && (
+                    {((isAdmin || report.created_by === user.id) && (isAdmin || report.status !== 'closed')) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

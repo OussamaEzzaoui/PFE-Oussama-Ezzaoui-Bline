@@ -10,7 +10,7 @@ import type { SafetyCategory, Project, Company } from '../lib/types';
 import { PDFDownloadLink } from '@react-pdf/renderer';
 import { SafetyReportPDF } from '../components/SafetyReportPDF';
 import { format } from 'date-fns';
-import OCPLogo from '../images/OCP_Group.svg.png';
+import safetyBLineLogo from '../images/safety_b_line_logo.png';
 
 interface ActionPlan {
   id?: string;
@@ -32,7 +32,7 @@ interface SafetyReportProps {
 
 export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const [actionPlans, setActionPlans] = useState<ActionPlan[]>([]);
   const [currentActionPlan, setCurrentActionPlan] = useState<ActionPlan>({
     action: '',
@@ -46,7 +46,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
-  const [subject, setSubject] = useState<'SOR' | 'SOP' | 'RES'>('SOR');
+  const [subject, setSubject] = useState<'SOSV : Safety Observation Site Visit' | 'SOP' | 'RES'>('SOSV : Safety Observation Site Visit');
   
   // Form state
   const [project, setProject] = useState('');
@@ -78,6 +78,8 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   // Add state for report data
   const [reportData, setReportData] = useState<any>(null);
 
+  const [profile, setProfile] = useState<{ username: string } | null>(null);
+
   const handleCategorySelect = (categoryId: string) => {
     setSelectedCategories(prev =>
       prev.includes(categoryId)
@@ -88,6 +90,18 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
 
   useEffect(() => {
     loadInitialData();
+    // Fetch profile username
+    const fetchProfile = async () => {
+      if (user?.id) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('user_id', user.id)
+          .single();
+        if (!error && data) setProfile(data);
+      }
+    };
+    fetchProfile();
   }, []);
 
   const loadInitialData = async () => {
@@ -281,7 +295,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
         .insert({
           project_id: project,
           company_id: company,
-          submitter_name: submitterName,
+          submitter_name: profile?.username,
           date,
           time,
           department,
@@ -356,7 +370,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
       setReportData({
         project: projectData!,
         company: companyData!,
-        submitterName,
+        submitterName: profile?.username,
         date,
         time,
         department,
@@ -400,8 +414,8 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <img src={OCPLogo} alt="OCP Logo" className="h-8 w-8 object-contain" />
+          <div className="flex items-center justify-center gap-6">
+            <img src={safetyBLineLogo} alt="Safety B Line by ASPC Logo" className="h-40 w-auto object-contain" />
             <h1 className="text-2xl font-bold text-gray-900">Safety Observation Report</h1>
           </div>
           <div className="flex items-center gap-4">
@@ -494,17 +508,10 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     </div>
                     <input
                       type="text"
-                      value={submitterName}
-                      onChange={(e) => setSubmitterName(e.target.value)}
-                      placeholder="Enter your name"
-                      required
-                      className={`w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
-                        validationErrors.submitterName ? 'border-red-500' : ''
-                      }`}
+                      value={profile?.username || ''}
+                      readOnly
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-100 cursor-not-allowed"
                     />
-                    {validationErrors.submitterName && (
-                      <p className="text-red-500 text-sm mt-1">{validationErrors.submitterName}</p>
-                    )}
                   </div>
 
                   {/* Department */}
@@ -575,12 +582,12 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                   </div>
                   <select
                     value={subject}
-                    onChange={(e) => setSubject(e.target.value as 'SOR' | 'SOP' | 'RES')}
+                    onChange={(e) => setSubject(e.target.value as 'SOSV : Safety Observation Site Visit' | 'SOP' | 'RES')}
                     required
                     className={`select-field ${validationErrors.subject ? 'border-red-500' : ''}`}
                   >
                     <option value="">Select Subject</option>
-                    <option value="SOR">Safety Observation Report (SOR)</option>
+                    <option value="SOSV : Safety Observation Site Visit">Safety Observation Site Visit (SOSV)</option>
                     <option value="SOP">Standard Operating Procedure (SOP)</option>
                     <option value="RES">Risk Evaluation Sheet (RES)</option>
                   </select>

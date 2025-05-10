@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import * as lucide from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { LucideIcon } from 'lucide-react';
-import OCPLogo from '../images/OCP_Group.svg.png';
+import safetyBLineLogo from '../images/safety_b_line_logo.png';
 
 interface NavItem {
   path: string;
@@ -165,22 +165,13 @@ export function Sidebar() {
       }`}
     >
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <img src={OCPLogo} alt="OCP Logo" className="h-8 w-8 object-contain" />
-          <span className={`font-semibold text-gray-900 transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto'}`}>Safety Portal</span>
-        </div>
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1 text-gray-500 hover:text-gray-700 rounded-lg"
-          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {isCollapsed ? (
-            <lucide.ChevronRight className="h-5 w-5" />
-          ) : (
-            <lucide.ChevronLeft className="h-5 w-5" />
-          )}
-        </button>
+      <div className="flex flex-col items-center justify-center px-4 border-b border-gray-200 py-6">
+        <img
+          src={safetyBLineLogo}
+          alt="Safety B Line by ASPC Logo"
+          className="h-36 w-auto mb-0 drop-shadow-lg"
+        />
+        <span className={`font-semibold text-gray-900 text-xl text-center mt-0 transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto'}`}>Safety Portal</span>
       </div>
 
       {/* New Report Button */}

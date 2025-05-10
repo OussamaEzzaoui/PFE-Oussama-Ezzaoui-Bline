@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { Shield, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import safetyBLineLogo from '../images/safety_b_line_logo.png';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -33,13 +34,11 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <Shield className="h-12 w-12 text-green-600" />
+      <div className="sm:mx-auto sm:w-full sm:max-w-md flex flex-col items-center">
+        <div className="flex justify-center w-full">
+          <img src={safetyBLineLogo} alt="Safety B Line by ASPC Logo" className="h-64 w-auto mb-4 drop-shadow-lg" />
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          OCP Safety Portal
-        </h2>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2 text-center">B-Line Safety Portal</h1>
         <p className="mt-2 text-center text-sm text-gray-600">
           Sign in to your account
         </p>

@@ -7,7 +7,7 @@ export interface SafetyObservation {
   time: string;
   location: string;
   description: string;
-  subject: 'SOR' | 'SOP' | 'RES';
+  subject: 'SOSV : Safety Observation Site Visit' | 'SOP' | 'RES';
   report_group: 'operations' | 'maintenance' | 'safety' | 'contractors';
   consequences: 'minor' | 'moderate' | 'major' | 'severe';
   likelihood: 'unlikely' | 'possible' | 'likely' | 'very-likely';
@@ -95,6 +95,8 @@ export interface SafetyReport {
   created_by: string;
   projects: { id: string; name: string };
   companies: { id: string; name: string };
+  supporting_image?: string;
+  safety_categories?: SafetyCategory[];
   action_plans: {
     id: string;
     action: string;
@@ -102,5 +104,6 @@ export interface SafetyReport {
     responsible_person: string;
     follow_up_contact: string;
     status: string;
+    supporting_image?: string;
   }[];
 }
