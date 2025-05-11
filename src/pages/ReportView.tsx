@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import * as lucide from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format } from 'date-fns';
@@ -21,6 +21,8 @@ interface ActionPlan {
 export function ReportView() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const mode = searchParams.get('mode') === 'view' ? 'view' : 'edit';
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -73,12 +75,171 @@ export function ReportView() {
   const [actionPlanImageFile, setActionPlanImageFile] = useState<File | null>(null);
   const [actionPlanImagePreview, setActionPlanImagePreview] = useState('');
 
-  useEffect(() => {
-    loadReport();
-    loadSafetyCategories();
-    loadProjects();
-    loadCompanies();
+  // Memoize the transformed report data
+  const transformedReport = useMemo(() => {
+    if (!report) return null;
+    return {
+      id: report.id,
+      subject: report.subject,
+      project: report.project,
+      company: report.company,
+      submitter_name: report.submitter_name,
+      date: report.date,
+      time: report.time,
+      location: report.location,
+      department: report.department,
+      description: report.description,
+      report_group: report.report_group,
+      consequences: report.consequences,
+      likelihood: report.likelihood,
+      status: report.status,
+      safety_categories: report.safety_categories,
+      action_plans: report.action_plans,
+      supporting_image: report.supporting_image,
+      created_at: report.created_at,
+      updated_at: report.updated_at
+    };
+  }, [report]);
+
+  // Memoize the action plans
+  const memoizedActionPlans = useMemo(() => {
+    return actionPlans.map(plan => ({
+      ...plan,
+      due_date: format(new Date(plan.due_date), 'MMMM d, yyyy')
+    }));
+  }, [actionPlans]);
+
+  // Memoize handlers
+  const handleCategorySelect = useCallback((categoryId: string) => {
+    setSelectedCategories(prev => {
+      if (prev.includes(categoryId)) {
+        return prev.filter(id => id !== categoryId);
+      } else {
+        return [...prev, categoryId];
+      }
+    });
+  }, []);
+
+  const handleImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  }, []);
+
+  // Optimize the loadReport function
+  const loadReport = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      // Load report data and action plans in parallel
+      const [reportResult, actionPlansResult] = await Promise.all([
+        supabase
+          .from('observation_details')
+          .select(`
+            *,
+            projects(name),
+            companies(name)
+          `)
+          .eq('id', id)
+          .single(),
+        supabase
+          .from('action_plans')
+          .select('*')
+          .eq('observation_id', id)
+      ]);
+
+      if (reportResult.error) throw reportResult.error;
+      if (actionPlansResult.error) throw actionPlansResult.error;
+
+      // Load categories
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('observation_categories')
+        .select('category_id')
+        .eq('observation_id', id);
+
+      if (categoriesError) throw categoriesError;
+
+      // Transform and set data
+      const transformedReport: Report = {
+        id: reportResult.data.id,
+        subject: reportResult.data.subject,
+        project: reportResult.data.projects.name,
+        company: reportResult.data.companies.name,
+        submitter_name: reportResult.data.submitter_name,
+        date: reportResult.data.date,
+        time: reportResult.data.time,
+        location: reportResult.data.location,
+        department: reportResult.data.department,
+        description: reportResult.data.description,
+        report_group: reportResult.data.report_group,
+        consequences: reportResult.data.consequences,
+        likelihood: reportResult.data.likelihood,
+        status: reportResult.data.status,
+        safety_categories: categoriesData?.map(c => ({ 
+          id: c.category_id, 
+          name: '', 
+          description: '', 
+          icon: 'default',
+          created_at: '', 
+          updated_at: '' 
+        })) || [],
+        action_plans: actionPlansResult.data || [],
+        supporting_image: reportResult.data.supporting_image,
+        created_at: reportResult.data.created_at,
+        updated_at: reportResult.data.updated_at
+      };
+
+      setReport(transformedReport);
+      setSelectedCategories(categoriesData?.map(c => c.category_id) || []);
+      setActionPlans(actionPlansResult.data || []);
+      setPendingActionPlans(actionPlansResult.data || []);
+      setIsActionPlansLoaded(true);
+      setActionPlanRequired(actionPlansResult.data?.length > 0 ? 'yes' : 'no');
+
+      // Set form state
+      setProject(reportResult.data.project_id);
+      setCompany(reportResult.data.company_id);
+      setSubmitterName(reportResult.data.submitter_name);
+      setDate(reportResult.data.date);
+      setTime(reportResult.data.time);
+      setDepartment(reportResult.data.department);
+      setLocation(reportResult.data.location);
+      setDescription(reportResult.data.description);
+      setReportGroup(reportResult.data.report_group);
+      setConsequences(reportResult.data.consequences);
+      setLikelihood(reportResult.data.likelihood);
+      setStatus(reportResult.data.status);
+      setSubject(reportResult.data.subject);
+
+      if (reportResult.data.supporting_image) {
+        setImagePreview(`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${reportResult.data.supporting_image}`);
+      }
+    } catch (err) {
+      setError('Failed to load report');
+      console.error('Error loading report:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  // Load data in parallel
+  useEffect(() => {
+    const loadData = async () => {
+      await Promise.all([
+        loadReport(),
+        loadSafetyCategories(),
+        loadProjects(),
+        loadCompanies()
+      ]);
+    };
+    loadData();
+  }, [id, loadReport]);
 
   const loadSafetyCategories = async () => {
     try {
@@ -119,123 +280,6 @@ export function ReportView() {
       setCompanies(data);
     } catch (err) {
       console.error('Error loading companies:', err);
-    }
-  };
-
-  const loadReport = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('observation_details')
-        .select(`
-          *,
-          projects(name),
-          companies(name)
-        `)
-        .eq('id', id)
-        .single();
-
-      if (error) throw error;
-
-      // Load selected categories
-      const { data: categoriesData, error: categoriesError } = await supabase
-        .from('observation_categories')
-        .select('category_id')
-        .eq('observation_id', id);
-
-      if (categoriesError) throw categoriesError;
-
-      // Load action plans
-      const { data: actionPlansData, error: actionPlansError } = await supabase
-        .from('action_plans')
-        .select('*')
-        .eq('observation_id', id);
-
-      if (actionPlansError) throw actionPlansError;
-
-      // Transform the data to match the Report interface
-      const transformedReport: Report = {
-        id: data.id,
-        subject: data.subject,
-        project: data.projects.name,
-        company: data.companies.name,
-        submitter_name: data.submitter_name,
-        date: data.date,
-        time: data.time,
-        location: data.location,
-        department: data.department,
-        description: data.description,
-        report_group: data.report_group,
-        consequences: data.consequences,
-        likelihood: data.likelihood,
-        status: data.status,
-        safety_categories: categoriesData?.map(c => ({ 
-          id: c.category_id, 
-          name: '', 
-          description: '', 
-          icon: 'default',
-          created_at: '', 
-          updated_at: '' 
-        })) || [],
-        action_plans: actionPlansData || [],
-        supporting_image: data.supporting_image,
-        created_at: data.created_at,
-        updated_at: data.updated_at
-      };
-
-      setReport(transformedReport);
-      setSelectedCategories(categoriesData?.map(c => c.category_id) || []);
-      // Initialize both action plan states
-      setActionPlans(actionPlansData || []);
-      setPendingActionPlans(actionPlansData || []);
-      setIsActionPlansLoaded(true);
-      setActionPlanRequired(actionPlansData?.length > 0 ? 'yes' : 'no');
-
-      // Set form state
-      setProject(data.project_id);
-      setCompany(data.company_id);
-      setSubmitterName(data.submitter_name);
-      setDate(data.date);
-      setTime(data.time);
-      setDepartment(data.department);
-      setLocation(data.location);
-      setDescription(data.description);
-      setReportGroup(data.report_group);
-      setConsequences(data.consequences);
-      setLikelihood(data.likelihood);
-      setStatus(data.status);
-      setSubject(data.subject);
-
-      if (data.supporting_image) {
-        setImagePreview(`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${data.supporting_image}`);
-      }
-    } catch (err) {
-      setError('Failed to load report');
-      console.error('Error loading report:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCategorySelect = (categoryId: string) => {
-    setSelectedCategories(prev => {
-      if (prev.includes(categoryId)) {
-        return prev.filter(id => id !== categoryId);
-      } else {
-        return [...prev, categoryId];
-      }
-    });
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -307,9 +351,10 @@ export function ReportView() {
       // Upload image if exists
       let imagePath = '';
       if (actionPlanImageFile) {
+        const fileName = `${Date.now()}-${actionPlanImageFile.name}`;
         const { data: imageData, error: imageError } = await supabase.storage
-          .from('safety-images')
-          .upload(`${Date.now()}-${actionPlanImageFile.name}`, actionPlanImageFile);
+          .from('action-plan-images')
+          .upload(fileName, actionPlanImageFile);
 
         if (imageError) throw imageError;
         imagePath = imageData.path;
@@ -392,9 +437,10 @@ export function ReportView() {
         // Upload new image if exists
         let imagePath = editedActionPlan.supporting_image;
         if (editedActionPlanImageFile) {
+          const fileName = `${Date.now()}-${editedActionPlanImageFile.name}`;
           const { data: imageData, error: imageError } = await supabase.storage
-            .from('safety-images')
-            .upload(`${Date.now()}-${editedActionPlanImageFile.name}`, editedActionPlanImageFile);
+            .from('action-plan-images')
+            .upload(fileName, editedActionPlanImageFile);
 
           if (imageError) throw imageError;
           imagePath = imageData.path;
@@ -600,619 +646,882 @@ export function ReportView() {
         <div className="bg-white rounded-lg shadow-sm p-4">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/')} 
               className="text-gray-500 hover:text-gray-700"
             >
               <lucide.ArrowLeft className="h-6 w-6" />
             </button>
-            <h1 className="text-2xl font-bold text-gray-900">Edit Safety Report</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {mode === 'view' ? 'View Safety Report' : 'Edit Safety Report'}
+            </h1>
           </div>
         </div>
-
+        {/* Error message */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
             {error}
           </div>
         )}
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            {/* General Information */}
-            <div className="space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900">General Information</h2>
-
-              {/* Project & Company */}
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Project
-                  </label>
-                  <select
-                    value={project}
-                    onChange={(e) => setProject(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  >
-                    <option value="">Select Project</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+        {mode === 'edit' ? (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              {/* General Information */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-2">
+                  <lucide.ClipboardList className="h-5 w-5 text-green-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">General Information</h2>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Company
-                  </label>
-                  <select
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  >
-                    <option value="">Select Company</option>
-                    {companies.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
 
-              {/* Submitter & Date/Time */}
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Submitter Name
-                  </label>
-                  <input
-                    type="text"
-                    value={submitterName}
-                    onChange={(e) => setSubmitterName(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+                {/* Project & Company */}
+                <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Date
-                    </label>
-                    <input
-                      type="date"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Briefcase className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Project</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {projects.find(p => p.id === project)?.name || ''}
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Time
-                    </label>
-                    <input
-                      type="time"
-                      value={time}
-                      onChange={(e) => setTime(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Building2 className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Company</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {companies.find(c => c.id === company)?.name || ''}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Submitter & Date/Time */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.User className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Submitter Name</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {submitterName}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <lucide.Calendar className="h-4 w-4 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Date</label>
+                      </div>
+                      <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                        {date}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <lucide.Clock className="h-4 w-4 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Time</label>
+                      </div>
+                      <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                        {time}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Department & Location */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Users2 className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Department</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {department}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.MapPin className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Location</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {location}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Department & Location */}
-              <div className="grid grid-cols-2 gap-6">
+              {/* Observation Details */}
+              <div className="mt-8 space-y-6">
+                <div className="flex items-center gap-2">
+                  <lucide.FileText className="h-5 w-5 text-green-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">Observation Details</h2>
+                </div>
+
+                {/* Subject Type */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Department
-                  </label>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.Tag className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Subject</label>
+                  </div>
+                  <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                    {subject}
+                  </div>
+                </div>
+
+                {/* Safety Categories */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.ShieldAlert className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Safety Categories</label>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {safetyCategories
+                      .filter(cat => selectedCategories.includes(cat.id))
+                      .map(cat => (
+                        <span
+                          key={cat.id}
+                          className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800"
+                        >
+                          <lucide.Check className="h-4 w-4 mr-1" />
+                          {cat.name}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.FileText className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Description</label>
+                  </div>
+                  <div className="px-4 py-2 bg-gray-50 rounded-lg whitespace-pre-wrap">
+                    {description}
+                  </div>
+                </div>
+
+                {/* Report Group */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.Users className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Report Group</label>
+                  </div>
+                  <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                    {reportGroup}
+                  </div>
+                </div>
+              </div>
+
+              {/* Risk Assessment */}
+              <div className="mt-8 space-y-6">
+                <div className="flex items-center gap-2">
+                  <lucide.AlertTriangle className="h-5 w-5 text-green-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">Risk Assessment</h2>
+                </div>
+
+                {/* Consequences & Likelihood */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.AlertTriangle className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Consequences</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {consequences}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.BarChart2 className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Likelihood</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {likelihood}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.Activity className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Status</label>
+                  </div>
+                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                    status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {status === 'open' ? (
+                      <lucide.CheckCircle className="h-4 w-4 mr-1" />
+                    ) : (
+                      <lucide.XCircle className="h-4 w-4 mr-1" />
+                    )}
+                    {status}
+                  </div>
+                </div>
+              </div>
+
+              {/* Image Upload */}
+              <div className="mt-8 space-y-4">
+                <div className="flex items-center gap-2">
+                  <lucide.Image className="h-5 w-5 text-green-600" />
+                  <label className="text-sm font-medium text-gray-700">Supporting Image</label>
+                </div>
+                <div className="flex items-center gap-4">
                   <input
-                    type="text"
-                    value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="hidden"
+                    id="image-upload"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Location
+                  <label
+                    htmlFor="image-upload"
+                    className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
+                  >
+                    Choose File
                   </label>
-                  <input
-                    type="text"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  />
+                  {imageFile && (
+                    <span className="text-sm text-gray-500">{imageFile.name}</span>
+                  )}
                 </div>
-              </div>
-            </div>
-
-            {/* Observation Details */}
-            <div className="mt-8 space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900">Observation Details</h2>
-
-              {/* Subject Type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Subject
-                </label>
-                <select
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value as 'SOSV : Safety Observation Site Visit' | 'SOP' | 'RES')}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="SOSV : Safety Observation Site Visit">Safety Observation Site Visit (SOSV)</option>
-                  <option value="SOP">Standard Operating Procedure (SOP)</option>
-                  <option value="RES">Risk Evaluation Sheet (RES)</option>
-                </select>
-              </div>
-
-              {/* Safety Categories */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Safety Categories
-                </label>
-                <SafetyCategories
-                  selectedCategories={selectedCategories}
-                  onSelectCategory={handleCategorySelect}
-                  categories={safetyCategories}
-                />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
-                />
-              </div>
-
-              {/* Report Group */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Report Group
-                </label>
-                <select
-                  value={reportGroup}
-                  onChange={(e) => setReportGroup(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="">Select Group</option>
-                  <option value="finding">Finding</option>
-                  <option value="positive">Positive</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Risk Assessment */}
-            <div className="mt-8 space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900">Risk Assessment</h2>
-
-              {/* Consequences & Likelihood */}
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Consequences
-                  </label>
-                  <select
-                    value={consequences}
-                    onChange={(e) => setConsequences(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  >
-                    <option value="">Select Severity</option>
-                    <option value="minor">Minor</option>
-                    <option value="moderate">Moderate</option>
-                    <option value="major">Major</option>
-                    <option value="severe">Severe</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Likelihood
-                  </label>
-                  <select
-                    value={likelihood}
-                    onChange={(e) => setLikelihood(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  >
-                    <option value="">Select Likelihood</option>
-                    <option value="unlikely">Unlikely</option>
-                    <option value="possible">Possible</option>
-                    <option value="likely">Likely</option>
-                    <option value="very-likely">Very Likely</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Status */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setStatus('open')}
-                    className={`py-2 px-4 rounded-lg border transition-colors ${
-                      status === 'open'
-                        ? 'bg-green-50 border-green-500 text-green-700'
-                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    Open
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStatus('closed')}
-                    className={`py-2 px-4 rounded-lg border transition-colors ${
-                      status === 'closed'
-                        ? 'bg-gray-50 border-gray-500 text-gray-700'
-                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    Closed
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Image Upload */}
-            <div className="mt-8 space-y-4">
-              <div className="flex items-center gap-2">
-                <lucide.Image className="h-5 w-5 text-green-600" />
-                <label className="text-sm font-medium text-gray-700">Supporting Image</label>
-              </div>
-              <div className="flex items-center gap-4">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="hidden"
-                  id="image-upload"
-                />
-                <label
-                  htmlFor="image-upload"
-                  className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
-                >
-                  Choose File
-                </label>
-                {imageFile && (
-                  <span className="text-sm text-gray-500">{imageFile.name}</span>
+                {imagePreview && (
+                  <div className="mt-4">
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="max-w-xs rounded-lg border border-gray-200"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.src = '/placeholder-image.png';
+                        console.error('Failed to load image:', report?.supporting_image);
+                      }}
+                    />
+                  </div>
                 )}
               </div>
-              {imagePreview && (
-                <div className="mt-4">
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="max-w-xs rounded-lg border border-gray-200"
-                  />
-                </div>
-              )}
-            </div>
 
-            {/* Action Plan Section */}
-            <div className="mt-8 bg-gray-50 p-6 rounded-lg">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2">
-                  <lucide.CheckSquare className="h-5 w-5 text-green-600" />
-                  <h2 className="text-lg font-semibold text-gray-900">Action Plan Required?</h2>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setActionPlanRequired('yes')}
-                    className={`py-2 px-4 rounded-lg border transition-colors ${
-                      actionPlanRequired === 'yes'
-                        ? 'bg-green-50 border-green-500 text-green-700'
-                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    Yes
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActionPlanRequired('no')}
-                    className={`py-2 px-4 rounded-lg border transition-colors ${
-                      actionPlanRequired === 'no'
-                        ? 'bg-green-50 border-green-500 text-green-700'
-                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    No
-                  </button>
-                </div>
-              </div>
-
-              {actionPlanRequired === 'yes' && (
-                <div className="space-y-6">
-                  {/* Action Description */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <lucide.FileText className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Action</label>
-                    </div>
-                    <textarea
-                      value={currentActionPlan.action}
-                      onChange={(e) => setCurrentActionPlan({
-                        ...currentActionPlan,
-                        action: e.target.value
-                      })}
-                      placeholder="Enter a detailed description of the required action"
-                      rows={4}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
-                    />
+              {/* Action Plan Section */}
+              <div className="mt-8 bg-gray-50 p-6 rounded-lg">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <lucide.CheckSquare className="h-5 w-5 text-green-600" />
+                    <h2 className="text-lg font-semibold text-gray-900">Action Plan Required?</h2>
                   </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setActionPlanRequired('yes')}
+                      className={`py-2 px-4 rounded-lg border transition-colors ${
+                        actionPlanRequired === 'yes'
+                          ? 'bg-green-50 border-green-500 text-green-700'
+                          : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActionPlanRequired('no')}
+                      className={`py-2 px-4 rounded-lg border transition-colors ${
+                        actionPlanRequired === 'no'
+                          ? 'bg-green-50 border-green-500 text-green-700'
+                          : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
 
-                  {/* Supporting Image */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <lucide.Image className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Supporting Image</label>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleActionPlanImageChange}
-                        className="hidden"
-                        id="action-plan-image-upload"
+                {actionPlanRequired === 'yes' && (
+                  <div className="space-y-6">
+                    {/* Action Description */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.FileText className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Action</label>
+                      </div>
+                      <textarea
+                        value={currentActionPlan.action}
+                        onChange={(e) => setCurrentActionPlan({
+                          ...currentActionPlan,
+                          action: e.target.value
+                        })}
+                        placeholder="Enter a detailed description of the required action"
+                        rows={4}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
                       />
-                      <label
-                        htmlFor="action-plan-image-upload"
-                        className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
-                      >
-                        Choose File
-                      </label>
-                      {actionPlanImageFile && (
-                        <span className="text-sm text-gray-500">{actionPlanImageFile.name}</span>
+                    </div>
+
+                    {/* Supporting Image */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.Image className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Supporting Image</label>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleActionPlanImageChange}
+                          className="hidden"
+                          id="action-plan-image-upload"
+                        />
+                        <label
+                          htmlFor="action-plan-image-upload"
+                          className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
+                        >
+                          Choose File
+                        </label>
+                        {actionPlanImageFile && (
+                          <span className="text-sm text-gray-500">{actionPlanImageFile.name}</span>
+                        )}
+                      </div>
+                      {actionPlanImagePreview && (
+                        <div className="mt-4">
+                          <img
+                            src={actionPlanImagePreview}
+                            alt="Preview"
+                            className="max-w-xs rounded-lg border border-gray-200"
+                          />
+                        </div>
                       )}
                     </div>
-                    {actionPlanImagePreview && (
-                      <div className="mt-4">
-                        <img
-                          src={actionPlanImagePreview}
-                          alt="Preview"
-                          className="max-w-xs rounded-lg border border-gray-200"
-                        />
+
+                    {/* Due Date */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.Calendar className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Due Date</label>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Due Date */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <lucide.Calendar className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Due Date</label>
+                      <input
+                        type="date"
+                        value={currentActionPlan.due_date}
+                        onChange={(e) => setCurrentActionPlan({
+                          ...currentActionPlan,
+                          due_date: e.target.value
+                        })}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
                     </div>
-                    <input
-                      type="date"
-                      value={currentActionPlan.due_date}
-                      onChange={(e) => setCurrentActionPlan({
-                        ...currentActionPlan,
-                        due_date: e.target.value
-                      })}
-                      min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
 
-                  {/* Responsible Person */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <lucide.User className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Responsible Person</label>
+                    {/* Responsible Person */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.User className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Responsible Person</label>
+                      </div>
+                      <input
+                        type="text"
+                        value={currentActionPlan.responsible_person}
+                        onChange={(e) => setCurrentActionPlan({
+                          ...currentActionPlan,
+                          responsible_person: e.target.value
+                        })}
+                        placeholder="Enter name of person responsible"
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      value={currentActionPlan.responsible_person}
-                      onChange={(e) => setCurrentActionPlan({
-                        ...currentActionPlan,
-                        responsible_person: e.target.value
-                      })}
-                      placeholder="Enter name of person responsible"
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
 
-                  {/* Follow-up Contact */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <lucide.UserCheck className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Follow-up Contact</label>
+                    {/* Follow-up Contact */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <lucide.UserCheck className="h-5 w-5 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Follow-up Contact</label>
+                      </div>
+                      <input
+                        type="text"
+                        value={currentActionPlan.follow_up_contact}
+                        onChange={(e) => setCurrentActionPlan({
+                          ...currentActionPlan,
+                          follow_up_contact: e.target.value
+                        })}
+                        placeholder="Enter name of person monitoring progress"
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      value={currentActionPlan.follow_up_contact}
-                      onChange={(e) => setCurrentActionPlan({
-                        ...currentActionPlan,
-                        follow_up_contact: e.target.value
-                      })}
-                      placeholder="Enter name of person monitoring progress"
-                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
-                  </div>
 
-                  {/* Action Plan Buttons */}
-                  <div className="flex gap-4">
-                    <button
-                      type="button"
-                      onClick={() => handleSaveActionPlan(false)}
-                      className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <lucide.Save className="h-5 w-5" />
-                      Save Action Plan
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSaveActionPlan(true)}
-                      className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <lucide.Plus className="h-5 w-5" />
-                      Save & Add Another
-                    </button>
-                  </div>
+                    {/* Action Plan Buttons */}
+                    <div className="flex gap-4">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveActionPlan(false)}
+                        className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <lucide.Save className="h-5 w-5" />
+                        Save Action Plan
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveActionPlan(true)}
+                        className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <lucide.Plus className="h-5 w-5" />
+                        Save & Add Another
+                      </button>
+                    </div>
 
-                  {/* List of Saved Action Plans */}
-                  {actionPlans.length > 0 && (
-                    <div className="mt-8">
-                      <h3 className="text-lg font-medium text-gray-900 mb-4">Saved Action Plans</h3>
-                      <div className="space-y-4">
-                        {actionPlans.map((plan, index) => (
-                          <div
-                            key={index}
-                            className="bg-white p-4 rounded-lg shadow mb-4"
-                          >
-                            {editingActionPlanIndex === index ? (
-                              <div className="space-y-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700">Action</label>
-                                  <input
-                                    type="text"
-                                    value={editedActionPlan?.action || ''}
-                                    onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, action: e.target.value })}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700">Due Date</label>
-                                  <input
-                                    type="date"
-                                    value={editedActionPlan?.due_date || ''}
-                                    onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, due_date: e.target.value })}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700">Responsible Person</label>
-                                  <input
-                                    type="text"
-                                    value={editedActionPlan?.responsible_person || ''}
-                                    onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, responsible_person: e.target.value })}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700">Follow-up Contact</label>
-                                  <input
-                                    type="text"
-                                    value={editedActionPlan?.follow_up_contact || ''}
-                                    onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, follow_up_contact: e.target.value })}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700">Supporting Image</label>
-                                  <div className="flex items-center gap-4 mt-1">
+                    {/* List of Saved Action Plans */}
+                    {actionPlans.length > 0 && (
+                      <div className="mt-8">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">Saved Action Plans</h3>
+                        <div className="space-y-4">
+                          {actionPlans.map((plan, index) => (
+                            <div
+                              key={index}
+                              className="bg-white p-4 rounded-lg shadow mb-4"
+                            >
+                              {editingActionPlanIndex === index ? (
+                                <div className="space-y-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">Action</label>
                                     <input
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={handleEditedActionPlanImageChange}
-                                      className="hidden"
-                                      id={`edit-action-plan-image-${index}`}
+                                      type="text"
+                                      value={editedActionPlan?.action || ''}
+                                      onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, action: e.target.value })}
+                                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                     />
-                                    <label
-                                      htmlFor={`edit-action-plan-image-${index}`}
-                                      className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
-                                    >
-                                      Choose File
-                                    </label>
-                                    {editedActionPlanImageFile && (
-                                      <span className="text-sm text-gray-500">{editedActionPlanImageFile.name}</span>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">Due Date</label>
+                                    <input
+                                      type="date"
+                                      value={editedActionPlan?.due_date || ''}
+                                      onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, due_date: e.target.value })}
+                                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">Responsible Person</label>
+                                    <input
+                                      type="text"
+                                      value={editedActionPlan?.responsible_person || ''}
+                                      onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, responsible_person: e.target.value })}
+                                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">Follow-up Contact</label>
+                                    <input
+                                      type="text"
+                                      value={editedActionPlan?.follow_up_contact || ''}
+                                      onChange={(e) => setEditedActionPlan({ ...editedActionPlan!, follow_up_contact: e.target.value })}
+                                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700">Supporting Image</label>
+                                    <div className="flex items-center gap-4 mt-1">
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleEditedActionPlanImageChange}
+                                        className="hidden"
+                                        id={`edit-action-plan-image-${index}`}
+                                      />
+                                      <label
+                                        htmlFor={`edit-action-plan-image-${index}`}
+                                        className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:border-gray-300 cursor-pointer"
+                                      >
+                                        Choose File
+                                      </label>
+                                      {editedActionPlanImageFile && (
+                                        <span className="text-sm text-gray-500">{editedActionPlanImageFile.name}</span>
+                                      )}
+                                    </div>
+                                    {(editedActionPlanImagePreview || editedActionPlan?.supporting_image) && (
+                                      <div className="mt-4">
+                                        <img
+                                          src={editedActionPlanImagePreview || `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/action-plan-images/${editedActionPlan?.supporting_image}`}
+                                          alt="Preview"
+                                          className="max-w-xs rounded-lg border border-gray-200"
+                                        />
+                                      </div>
                                     )}
                                   </div>
-                                  {(editedActionPlanImagePreview || editedActionPlan?.supporting_image) && (
-                                    <div className="mt-4">
+                                  <div className="flex justify-end space-x-2">
+                                    <button
+                                      onClick={handleCancelEditActionPlan}
+                                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      onClick={handleSaveEditedActionPlan}
+                                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                                    >
+                                      Save Changes
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <p className="font-medium">Action: {plan.action}</p>
+                                  <p>Due Date: {plan.due_date}</p>
+                                  <p>Responsible Person: {plan.responsible_person}</p>
+                                  <p>Follow-up Contact: {plan.follow_up_contact}</p>
+                                  <p>Status: {plan.status}</p>
+                                  {plan.supporting_image && (
+                                    <div className="mt-2">
                                       <img
-                                        src={editedActionPlanImagePreview || `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${editedActionPlan?.supporting_image}`}
-                                        alt="Preview"
-                                        className="max-w-xs rounded-lg border border-gray-200"
+                                        src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/action-plan-images/${plan.supporting_image}`}
+                                        alt="Action plan supporting image"
+                                        className="max-w-full h-auto rounded-lg"
+                                        loading="lazy"
+                                        onError={(e) => {
+                                          e.currentTarget.src = '/placeholder-image.png';
+                                          console.error('Failed to load image:', plan.supporting_image);
+                                        }}
                                       />
                                     </div>
                                   )}
-                                </div>
-                                <div className="flex justify-end space-x-2">
-                                  <button
-                                    onClick={handleCancelEditActionPlan}
-                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    onClick={handleSaveEditedActionPlan}
-                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-                                  >
-                                    Save Changes
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div>
-                                <p className="font-medium">Action: {plan.action}</p>
-                                <p>Due Date: {plan.due_date}</p>
-                                <p>Responsible Person: {plan.responsible_person}</p>
-                                <p>Follow-up Contact: {plan.follow_up_contact}</p>
-                                <p>Status: {plan.status}</p>
-                                {plan.supporting_image && (
-                                  <div className="mt-4">
-                                    <img
-                                      src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${plan.supporting_image}`}
-                                      alt="Supporting image"
-                                      className="max-w-xs rounded-lg border border-gray-200"
-                                    />
+                                  <div className="mt-4 flex justify-end space-x-2">
+                                    <button
+                                      onClick={() => handleEditActionPlan(index)}
+                                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        handleDeleteActionPlan(index);
+                                      }}
+                                      type="button"
+                                      className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                                    >
+                                      Delete
+                                    </button>
                                   </div>
-                                )}
-                                <div className="mt-4 flex justify-end space-x-2">
-                                  <button
-                                    onClick={() => handleEditActionPlan(index)}
-                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      handleDeleteActionPlan(index);
-                                    }}
-                                    type="button"
-                                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
-                                  >
-                                    Delete
-                                  </button>
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Button */}
+              <div className="mt-8 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? (
+                    <lucide.Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <>
+                      <lucide.Save className="h-5 w-5" />
+                      Save Changes
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              {/* General Information */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-2">
+                  <lucide.ClipboardList className="h-5 w-5 text-green-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">General Information</h2>
+                </div>
+
+                {/* Project & Company */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Briefcase className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Project</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {projects.find(p => p.id === project)?.name || ''}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Building2 className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Company</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {companies.find(c => c.id === company)?.name || ''}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Submitter & Date/Time */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.User className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Submitter Name</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {submitterName}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <lucide.Calendar className="h-4 w-4 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Date</label>
+                      </div>
+                      <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                        {date}
                       </div>
                     </div>
-                  )}
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <lucide.Clock className="h-4 w-4 text-green-600" />
+                        <label className="text-sm font-medium text-gray-700">Time</label>
+                      </div>
+                      <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                        {time}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Department & Location */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Users2 className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Department</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {department}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.MapPin className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Location</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {location}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Observation Details */}
+              <div className="mt-8 space-y-6">
+                <div className="flex items-center gap-2">
+                  <lucide.FileText className="h-5 w-5 text-green-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">Observation Details</h2>
+                </div>
+
+                {/* Subject Type */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.Tag className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Subject</label>
+                  </div>
+                  <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                    {subject}
+                  </div>
+                </div>
+
+                {/* Safety Categories */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.ShieldAlert className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Safety Categories</label>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {safetyCategories
+                      .filter(cat => selectedCategories.includes(cat.id))
+                      .map(cat => (
+                        <span
+                          key={cat.id}
+                          className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800"
+                        >
+                          <lucide.Check className="h-4 w-4 mr-1" />
+                          {cat.name}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.FileText className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Description</label>
+                  </div>
+                  <div className="px-4 py-2 bg-gray-50 rounded-lg whitespace-pre-wrap">
+                    {description}
+                  </div>
+                </div>
+
+                {/* Report Group */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.Users className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Report Group</label>
+                  </div>
+                  <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                    {reportGroup}
+                  </div>
+                </div>
+              </div>
+
+              {/* Risk Assessment */}
+              <div className="mt-8 space-y-6">
+                <div className="flex items-center gap-2">
+                  <lucide.AlertTriangle className="h-5 w-5 text-green-600" />
+                  <h2 className="text-lg font-semibold text-gray-900">Risk Assessment</h2>
+                </div>
+
+                {/* Consequences & Likelihood */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.AlertTriangle className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Consequences</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {consequences}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.BarChart2 className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Likelihood</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {likelihood}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <lucide.Activity className="h-4 w-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Status</label>
+                  </div>
+                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                    status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {status === 'open' ? (
+                      <lucide.CheckCircle className="h-4 w-4 mr-1" />
+                    ) : (
+                      <lucide.XCircle className="h-4 w-4 mr-1" />
+                    )}
+                    {status}
+                  </div>
+                </div>
+              </div>
+
+              {/* Supporting Image */}
+              {(imagePreview || report?.supporting_image) && (
+                <div className="mt-8 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <lucide.Image className="h-5 w-5 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Supporting Image</label>
+                  </div>
+                  <div className="mt-4">
+                    <img
+                      src={imagePreview || `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${report?.supporting_image}`}
+                      alt="Preview"
+                      className="max-w-xs rounded-lg border border-gray-200"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.src = '/placeholder-image.png';
+                        console.error('Failed to load image:', report?.supporting_image);
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Action Plans */}
+              {actionPlans.length > 0 && (
+                <div className="mt-8 space-y-6">
+                  <div className="flex items-center gap-2">
+                    <lucide.CheckSquare className="h-5 w-5 text-green-600" />
+                    <h2 className="text-lg font-semibold text-gray-900">Action Plans</h2>
+                  </div>
+                  <div className="space-y-4">
+                    {actionPlans.map((plan, index) => (
+                      <div key={index} className="bg-gray-50 p-4 rounded-lg">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <lucide.FileText className="h-4 w-4 text-green-600" />
+                              <label className="text-sm font-medium text-gray-700">Action</label>
+                            </div>
+                            <div className="mt-1">{plan.action}</div>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <lucide.Calendar className="h-4 w-4 text-green-600" />
+                              <label className="text-sm font-medium text-gray-700">Due Date</label>
+                            </div>
+                            <div className="mt-1">{plan.due_date}</div>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <lucide.User className="h-4 w-4 text-green-600" />
+                              <label className="text-sm font-medium text-gray-700">Responsible Person</label>
+                            </div>
+                            <div className="mt-1">{plan.responsible_person}</div>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <lucide.UserCheck className="h-4 w-4 text-green-600" />
+                              <label className="text-sm font-medium text-gray-700">Follow-up Contact</label>
+                            </div>
+                            <div className="mt-1">{plan.follow_up_contact}</div>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <lucide.Activity className="h-4 w-4 text-green-600" />
+                              <label className="text-sm font-medium text-gray-700">Status</label>
+                            </div>
+                            <div className={`mt-1 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              plan.status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {plan.status === 'open' ? (
+                                <lucide.CheckCircle className="h-4 w-4 mr-1" />
+                              ) : (
+                                <lucide.XCircle className="h-4 w-4 mr-1" />
+                              )}
+                              {plan.status}
+                            </div>
+                          </div>
+                        </div>
+                        {plan.supporting_image && (
+                          <div className="mt-2">
+                            <img
+                              src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/action-plan-images/${plan.supporting_image}`}
+                              alt="Action plan supporting image"
+                              className="max-w-full h-auto rounded-lg"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.src = '/placeholder-image.png';
+                                console.error('Failed to load image:', plan.supporting_image);
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-
-            {/* Submit Button */}
-            <div className="mt-8 flex justify-end">
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {saving ? (
-                  <lucide.Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <>
-                    <lucide.Save className="h-5 w-5" />
-                    Save Changes
-                  </>
-                )}
-              </button>
-            </div>
           </div>
-        </form>
+        )}
       </div>
     </div>
   );

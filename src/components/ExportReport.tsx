@@ -93,23 +93,145 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
       // Add images if included
       if (includeImages && data.supporting_image) {
         try {
-          const { data: imageData, error: imageError } = await supabase.storage
-            .from('safety-images')
-            .download(data.supporting_image);
+          // Check if the image is already a base64 string
+          if (data.supporting_image.startsWith('data:image')) {
+            // Convert base64 to Uint8Array
+            const base64Data = data.supporting_image.split(',')[1];
+            const binaryString = window.atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            // Try to embed as PNG first, then JPG if that fails
+            try {
+              const image = await pdfDoc.embedPng(bytes);
+              const imageDims = image.scale(0.5);
+              page.drawImage(image, {
+                x: 50,
+                y: y - imageDims.height,
+                width: imageDims.width,
+                height: imageDims.height
+              });
+            } catch (pngError) {
+              try {
+                const image = await pdfDoc.embedJpg(bytes);
+                const imageDims = image.scale(0.5);
+                page.drawImage(image, {
+                  x: 50,
+                  y: y - imageDims.height,
+                  width: imageDims.width,
+                  height: imageDims.height
+                });
+              } catch (jpgError) {
+                console.error('Failed to embed image as PNG or JPG:', jpgError);
+              }
+            }
+          } else {
+            // Handle URL or path
+            let imageData;
+            if (data.supporting_image.startsWith('http')) {
+              // If it's already a full URL, fetch it directly
+              const response = await fetch(data.supporting_image);
+              imageData = await response.blob();
+            } else {
+              // Download from Supabase if it's a path
+              const { data: supabaseData, error: imageError } = await supabase.storage
+                .from('safety-images')
+                .download(data.supporting_image);
 
-          if (!imageError && imageData) {
-            const imageBytes = await imageData.arrayBuffer();
-            const image = await pdfDoc.embedJpg(imageBytes);
-            const imageDims = image.scale(0.5);
-            page.drawImage(image, {
-              x: 50,
-              y: y - imageDims.height,
-              width: imageDims.width,
-              height: imageDims.height
-            });
+              if (imageError) {
+                throw imageError;
+              }
+              imageData = supabaseData;
+            }
+
+            if (imageData) {
+              const imageBytes = await imageData.arrayBuffer();
+              // Try to embed as PNG first, then JPG if that fails
+              try {
+                const image = await pdfDoc.embedPng(imageBytes);
+                const imageDims = image.scale(0.5);
+                page.drawImage(image, {
+                  x: 50,
+                  y: y - imageDims.height,
+                  width: imageDims.width,
+                  height: imageDims.height
+                });
+              } catch (pngError) {
+                try {
+                  const image = await pdfDoc.embedJpg(imageBytes);
+                  const imageDims = image.scale(0.5);
+                  page.drawImage(image, {
+                    x: 50,
+                    y: y - imageDims.height,
+                    width: imageDims.width,
+                    height: imageDims.height
+                  });
+                } catch (jpgError) {
+                  console.error('Failed to embed image as PNG or JPG:', jpgError);
+                }
+              }
+            }
           }
         } catch (error) {
           console.error('Error adding image to PDF:', error);
+        }
+      }
+
+      // Add action plan images if included
+      if (includeActionPlans && data.action_plans) {
+        for (const plan of data.action_plans) {
+          if (plan.supporting_image) {
+            try {
+              let imageData;
+              if (plan.supporting_image.startsWith('http')) {
+                // If it's already a full URL, fetch it directly
+                const response = await fetch(plan.supporting_image);
+                imageData = await response.blob();
+              } else {
+                // Download from Supabase if it's a path
+                const { data: supabaseData, error: imageError } = await supabase.storage
+                  .from('action-plan-images')
+                  .download(plan.supporting_image);
+
+                if (imageError) {
+                  throw imageError;
+                }
+                imageData = supabaseData;
+              }
+
+              if (imageData) {
+                const imageBytes = await imageData.arrayBuffer();
+                // Try to embed as PNG first, then JPG if that fails
+                try {
+                  const image = await pdfDoc.embedPng(imageBytes);
+                  const imageDims = image.scale(0.5);
+                  page.drawImage(image, {
+                    x: 50,
+                    y: y - imageDims.height,
+                    width: imageDims.width,
+                    height: imageDims.height
+                  });
+                } catch (pngError) {
+                  try {
+                    const image = await pdfDoc.embedJpg(imageBytes);
+                    const imageDims = image.scale(0.5);
+                    page.drawImage(image, {
+                      x: 50,
+                      y: y - imageDims.height,
+                      width: imageDims.width,
+                      height: imageDims.height
+                    });
+                  } catch (jpgError) {
+                    console.error('Failed to embed image as PNG or JPG:', jpgError);
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error adding action plan image to PDF:', error);
+            }
+          }
         }
       }
 

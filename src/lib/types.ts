@@ -96,6 +96,10 @@ export interface SafetyReport {
   projects: { id: string; name: string };
   companies: { id: string; name: string };
   supporting_image?: string;
+  department?: string;
+  location?: string;
+  report_group?: string;
+  likelihood?: string;
   safety_categories?: SafetyCategory[];
   action_plans: {
     id: string;

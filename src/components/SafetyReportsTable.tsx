@@ -65,6 +65,79 @@ function DeleteModal({ report, onConfirm, onCancel }: DeleteModalProps) {
   );
 }
 
+function getPublicUrl(path: string, bucket: string): string {
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function downloadImage(path: string, bucket: string): Promise<Blob | null> {
+  try {
+    // Remove any leading slashes and ensure proper path format
+    const cleanPath = path.replace(/^\/+/, '');
+    
+    console.log(`Downloading image from bucket: ${bucket}, path: ${cleanPath}`);
+    
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .download(cleanPath);
+    
+    if (error) {
+      console.error('Error downloading image:', error, {
+        bucket,
+        path: cleanPath,
+        errorMessage: error.message
+      });
+      return null;
+    }
+    
+    if (!data) {
+      console.error('No data received from storage');
+      return null;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error downloading image:', error, {
+      bucket,
+      path,
+      errorMessage: error instanceof Error ? error.message : 'Unknown error'
+    });
+    return null;
+  }
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = (error) => {
+      console.error('Error converting blob to base64:', error);
+      reject(error);
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function getImageAsBase64(path: string, bucket: string): Promise<string> {
+  if (!path) {
+    console.warn('Empty path provided for image download');
+    return '';
+  }
+
+  const blob = await downloadImage(path, bucket);
+  if (!blob) {
+    console.warn(`Failed to download image: ${path} from bucket: ${bucket}`);
+    return '';
+  }
+
+  try {
+    return await blobToBase64(blob);
+  } catch (error) {
+    console.error('Error converting image to base64:', error);
+    return '';
+  }
+}
+
 export function SafetyReportsTable() {
   const navigate = useNavigate();
   const { isAdmin, user } = useAuth();
@@ -90,12 +163,86 @@ export function SafetyReportsTable() {
     key: 'created_at',
     direction: 'desc',
   });
+  const [reportImages, setReportImages] = useState<Record<string, string>>({});
+  const [loadingImages, setLoadingImages] = useState(false);
 
   const reportsPerPage = 10;
 
   useEffect(() => {
     loadReports();
   }, [currentPage, filters, sortConfig]);
+
+  useEffect(() => {
+    const loadImages = async () => {
+      setLoadingImages(true);
+      const images: Record<string, string> = {};
+      
+      try {
+        for (const report of reports) {
+          if (report.supporting_image) {
+            console.log('Loading supporting image:', report.supporting_image);
+            const base64Image = await getImageAsBase64(report.supporting_image, 'safety-images');
+            if (base64Image) {
+              images[report.supporting_image] = base64Image;
+            }
+          }
+          
+          for (const plan of report.action_plans || []) {
+            if (plan.supporting_image) {
+              console.log('Loading action plan image:', plan.supporting_image);
+              const base64Image = await getImageAsBase64(plan.supporting_image, 'action-plan-images');
+              if (base64Image) {
+                images[plan.supporting_image] = base64Image;
+              }
+            }
+          }
+        }
+        
+        console.log('Successfully loaded images:', Object.keys(images).length);
+        setReportImages(images);
+      } catch (error) {
+        console.error('Error loading images:', error);
+      } finally {
+        setLoadingImages(false);
+      }
+    };
+
+    if (reports.length > 0) {
+      loadImages();
+    }
+  }, [reports]);
+
+  // Debug logging for PDF image sources
+  useEffect(() => {
+    if (reports.length > 0) {
+      reports.forEach(report => {
+        console.log('PDF report.supporting_image:', report.supporting_image,
+          report.supporting_image
+            ? (
+                reportImages[report.supporting_image] && typeof reportImages[report.supporting_image] === 'string' && reportImages[report.supporting_image].startsWith('data:image/')
+                  ? reportImages[report.supporting_image]
+                  : (report.supporting_image.trim() !== ''
+                      ? `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${report.supporting_image.replace(/^\/+/, '')}`
+                      : undefined)
+              )
+            : undefined
+        );
+        (report.action_plans || []).forEach(plan => {
+          console.log('PDF actionPlan.supporting_image:', plan.supporting_image,
+            plan.supporting_image
+              ? (
+                  reportImages[plan.supporting_image] && typeof reportImages[plan.supporting_image] === 'string' && reportImages[plan.supporting_image].startsWith('data:image/')
+                    ? reportImages[plan.supporting_image]
+                    : (plan.supporting_image.trim() !== ''
+                        ? `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/action-plan-images/${plan.supporting_image.replace(/^\/+/, '')}`
+                        : undefined)
+                )
+              : undefined
+          );
+        });
+      });
+    }
+  }, [reports, reportImages]);
 
   const loadReports = async () => {
     try {
@@ -112,15 +259,22 @@ export function SafetyReportsTable() {
           status,
           created_at,
           created_by,
+          department,
+          location,
+          report_group,
+          likelihood,
+          supporting_image,
           projects(id, name),
           companies(id, name),
+          safety_categories(id, name, icon),
           action_plans(
             id,
             action,
             due_date,
             responsible_person,
             follow_up_contact,
-            status
+            status,
+            supporting_image
           )
         `)
         .order(sortConfig.key, { ascending: sortConfig.direction === 'asc' })
@@ -452,47 +606,94 @@ export function SafetyReportsTable() {
                         Edit
                       </button>
                     )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/reports/${report.id}?mode=view`);
+                      }}
+                      className="text-blue-600 hover:text-blue-700 flex items-center gap-1 px-1 py-0.5 rounded"
+                    >
+                      <lucide.Eye className="h-4 w-4" />
+                      View
+                    </button>
                     <PDFDownloadLink
-                      document={<SafetyReportPDF report={{
-                        project: { id: report.projects.id, name: report.projects.name },
-                        company: { id: report.companies.id, name: report.companies.name },
-                        submitterName: report.submitter_name,
-                        date: report.date,
-                        time: format(parseISO(report.created_at), 'HH:mm'),
-                        department: 'General',
-                        location: 'On-site',
-                        description: report.description,
-                        reportGroup: 'Safety',
-                        consequences: report.consequences,
-                        likelihood: 'N/A',
-                        status: report.status,
-                        subject: report.subject,
-                        categories: [],
-                        actionPlans: (report.action_plans || []).map(plan => ({
-                          ...plan,
-                          status: plan.status.toLowerCase() as 'open' | 'closed'
-                        }))
-                      }} />}
+                      document={
+                        <SafetyReportPDF
+                          report={{
+                            project: { id: report.projects.id, name: report.projects.name },
+                            company: { id: report.companies.id, name: report.companies.name },
+                            submitterName: report.submitter_name,
+                            date: report.date,
+                            time: format(parseISO(report.created_at), 'HH:mm'),
+                            department: report.department || 'General',
+                            location: report.location || 'On-site',
+                            description: report.description,
+                            reportGroup: report.report_group || 'Safety',
+                            consequences: report.consequences,
+                            likelihood: report.likelihood || 'N/A',
+                            status: report.status,
+                            subject: report.subject,
+                            categories: report.safety_categories || [],
+                            actionPlans: (report.action_plans || []).map(plan => {
+                              let imgSrc: string | undefined = undefined;
+                              if (plan.supporting_image) {
+                                if (
+                                  reportImages[plan.supporting_image] &&
+                                  typeof reportImages[plan.supporting_image] === 'string' &&
+                                  reportImages[plan.supporting_image].startsWith('data:image/')
+                                ) {
+                                  imgSrc = reportImages[plan.supporting_image];
+                                } else if (plan.supporting_image.trim() !== '') {
+                                  const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/action-plan-images/${plan.supporting_image.replace(/^\/+/,'')}`;
+                                  imgSrc = url.trim() !== '' ? url : undefined;
+                                }
+                              }
+                              return {
+                                ...plan,
+                                status: plan.status.toLowerCase() as 'open' | 'closed',
+                                supporting_image: typeof imgSrc === 'string' && imgSrc.trim() !== '' ? imgSrc : undefined
+                              };
+                            }),
+                            supportingImage: (() => {
+                              let imgSrc: string | undefined = undefined;
+                              if (report.supporting_image) {
+                                if (
+                                  reportImages[report.supporting_image] &&
+                                  typeof reportImages[report.supporting_image] === 'string' &&
+                                  reportImages[report.supporting_image].startsWith('data:image/')
+                                ) {
+                                  imgSrc = reportImages[report.supporting_image];
+                                } else if (report.supporting_image.trim() !== '') {
+                                  const url = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/safety-images/${report.supporting_image.replace(/^\/+/,'')}`;
+                                  imgSrc = url.trim() !== '' ? url : undefined;
+                                }
+                              }
+                              return typeof imgSrc === 'string' && imgSrc.trim() !== '' ? imgSrc : undefined;
+                            })()
+                          }}
+                        />
+                      }
                       fileName={`safety-report-${report.id}-${format(new Date(), 'yyyy-MM-dd')}.pdf`}
                       className="text-blue-600 hover:text-blue-700 flex items-center gap-1 px-1 py-0.5 rounded"
                     >
-                      {({ blob, url, loading, error }) => {
-                        if (error) {
-                          console.error('PDF generation error:', error);
-                          return (
-                            <div className="text-red-600 flex items-center gap-1">
-                              <lucide.AlertTriangle className="h-4 w-4" />
-                              Error
-                            </div>
-                          );
-                        }
-                        return (
-                          <>
-                            <lucide.FileText className="h-4 w-4" />
-                            {loading ? 'Loading...' : 'PDF'}
-                          </>
-                        );
-                      }}
+                      {({ blob, url, loading, error }) =>
+                        loading || loadingImages ? (
+                          <span className="flex items-center gap-1">
+                            <lucide.Loader2 className="h-4 w-4 animate-spin" />
+                            Loading PDF...
+                          </span>
+                        ) : error ? (
+                          <span className="flex items-center gap-1 text-red-600">
+                            <lucide.AlertTriangle className="h-4 w-4" />
+                            Error
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1">
+                            <lucide.FileDown className="h-4 w-4" />
+                            Download PDF
+                          </span>
+                        )
+                      }
                     </PDFDownloadLink>
                     {isAdmin && (
                       <button

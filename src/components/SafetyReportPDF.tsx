@@ -1,6 +1,25 @@
-import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Document, Page, Text, View, StyleSheet, Image, Font } from '@react-pdf/renderer';
 import { format } from 'date-fns';
 import type { SafetyCategory, Project, Company, ActionPlan } from '../lib/types';
+
+// Register fonts
+Font.register({
+  family: 'Helvetica',
+  fonts: [
+    { src: 'https://cdn.jsdelivr.net/npm/@fontsource/helvetica@4.5.0/files/helvetica-regular.woff2' },
+    { src: 'https://cdn.jsdelivr.net/npm/@fontsource/helvetica@4.5.0/files/helvetica-bold.woff2', fontWeight: 'bold' }
+  ]
+});
+
+// Add image cache with TTL (Time To Live)
+const imageCache = new Map<string, { url: string; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+interface ImageUrls {
+  main?: string;
+  [key: string]: string | undefined;
+}
 
 const styles = StyleSheet.create({
   page: {
@@ -74,6 +93,37 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
     borderLeft: 1,
     borderLeftColor: '#234CAD'
+  },
+  categoryTag: {
+    backgroundColor: '#DCFCE7',
+    color: '#166534',
+    padding: '4 8',
+    borderRadius: 4,
+    marginRight: 4,
+    marginBottom: 4,
+    fontSize: 10
+  },
+  image: {
+    width: 400,
+    height: 300,
+    marginTop: 10,
+    marginBottom: 10,
+    objectFit: 'contain'
+  },
+  imagePlaceholder: {
+    width: 400,
+    height: 300,
+    marginTop: 10,
+    marginBottom: 10,
+    backgroundColor: '#E5E7EB',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  imageContainer: {
+    marginTop: 10,
+    marginBottom: 10,
+    alignItems: 'center'
   }
 });
 
@@ -94,11 +144,64 @@ interface SafetyReportPDFProps {
     subject: string;
     supportingImage?: string;
     categories: SafetyCategory[];
-    actionPlans: ActionPlan[];
+    actionPlans: (ActionPlan & {
+      supporting_image?: string;
+    })[];
   };
 }
 
 export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
+  const [imageUrls, setImageUrls] = useState<ImageUrls>({});
+
+  // Memoize the formatted date and time
+  const formattedDate = useMemo(() => 
+    format(new Date(), 'MMMM d, yyyy'), 
+    []
+  );
+
+  // Memoize the report date
+  const formattedReportDate = useMemo(() => 
+    format(new Date(report.date), 'MMMM d, yyyy'),
+    [report.date]
+  );
+
+  // Memoize the action plans with formatted dates
+  const formattedActionPlans = useMemo(() => 
+    report.actionPlans.map(plan => ({
+      ...plan,
+      formattedDueDate: format(new Date(plan.due_date), 'MMMM d, yyyy')
+    })),
+    [report.actionPlans]
+  );
+
+  useEffect(() => {
+    const loadImages = async () => {
+      const urls: ImageUrls = {};
+      
+      // Load main image
+      if (report.supportingImage) {
+        const mainImageUrl = await loadImage(report.supportingImage, false);
+        if (mainImageUrl) {
+          urls.main = mainImageUrl;
+        }
+      }
+
+      // Load action plan images
+      for (const plan of report.actionPlans) {
+        if (plan.supporting_image && plan.id) {
+          const planImageUrl = await loadImage(plan.supporting_image, true);
+          if (planImageUrl) {
+            urls[plan.id] = planImageUrl;
+          }
+        }
+      }
+
+      setImageUrls(urls);
+    };
+
+    loadImages();
+  }, [report]);
+
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'open':
@@ -128,31 +231,90 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
   const statusColors = getStatusColor(report.status);
   const consequencesColors = getConsequencesColor(report.consequences);
 
+  const loadImage = async (url: string, isActionPlan: boolean): Promise<string | null> => {
+    try {
+      // Check cache first
+      const cachedImage = imageCache.get(url);
+      if (cachedImage && Date.now() - cachedImage.timestamp < CACHE_TTL) {
+        return cachedImage.url;
+      }
+
+      let imageUrl = url;
+      
+      // Handle base64 images
+      if (url.startsWith('data:image')) {
+        return url;
+      }
+
+      // Handle full URLs
+      if (url.startsWith('http')) {
+        imageUrl = url;
+      } else {
+        // Construct Supabase URL with correct bucket
+        const bucket = isActionPlan ? 'action-plan-images' : 'safety-images';
+        imageUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${bucket}/${url}`;
+      }
+
+      // Fetch and cache the image
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to load image: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+
+      // Cache the result with timestamp
+      imageCache.set(url, { url: base64, timestamp: Date.now() });
+      return base64;
+    } catch (error) {
+      console.error('Error loading image:', error);
+      return null;
+    }
+  };
+
+  const renderImage = (url: string, isActionPlan: boolean = false) => {
+    const imageUrl = url ? imageUrls[url] : imageUrls.main;
+    
+    if (!imageUrl) {
+      return (
+        <View style={styles.imageContainer}>
+          <View style={styles.imagePlaceholder}>
+            <Text style={{ color: '#666666', fontSize: 10 }}>Image not available</Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.imageContainer}>
+        <Image
+          src={imageUrl}
+          style={styles.image}
+          cache={false}
+        />
+      </View>
+    );
+  };
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Safety Report</Text>
           <Text style={styles.headerSubtitle}>
-            Generated on {format(new Date(), 'MMMM d, yyyy')} at {report.time}
+            Generated on {formattedDate} at {report.time}
           </Text>
         </View>
 
+        {/* General Information Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>General Information</Text>
           <View style={styles.infoGrid}>
-            <View style={styles.infoItem}>
-              <Text style={styles.label}>Subject</Text>
-              <Text style={styles.value}>{report.subject}</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.label}>Date</Text>
-              <Text style={styles.value}>{format(new Date(report.date), 'MMMM d, yyyy')}</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.label}>Submitter</Text>
-              <Text style={styles.value}>{report.submitterName}</Text>
-            </View>
             <View style={styles.infoItem}>
               <Text style={styles.label}>Project</Text>
               <Text style={styles.value}>{report.project.name}</Text>
@@ -162,61 +324,124 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
               <Text style={styles.value}>{report.company.name}</Text>
             </View>
             <View style={styles.infoItem}>
+              <Text style={styles.label}>Submitter Name</Text>
+              <Text style={styles.value}>{report.submitterName}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>Date</Text>
+              <Text style={styles.value}>{formattedReportDate}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>Time</Text>
+              <Text style={styles.value}>{report.time}</Text>
+            </View>
+            <View style={styles.infoItem}>
               <Text style={styles.label}>Department</Text>
               <Text style={styles.value}>{report.department}</Text>
             </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>Location</Text>
+              <Text style={styles.value}>{report.location}</Text>
+            </View>
           </View>
         </View>
-        
+
+        {/* Observation Details Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Observation Details</Text>
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>Subject</Text>
+              <Text style={styles.value}>{report.subject}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>Report Group</Text>
+              <Text style={styles.value}>{report.reportGroup}</Text>
+            </View>
+          </View>
+
+          {/* Safety Categories */}
+          <View style={{ marginTop: 10 }}>
+            <Text style={styles.label}>Safety Categories</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
+              {report.categories.map((category) => (
+                <Text key={category.id} style={styles.categoryTag}>
+                  {category.name}
+                </Text>
+              ))}
+            </View>
+          </View>
+
+          {/* Description */}
+          <View style={{ marginTop: 10 }}>
+            <Text style={styles.label}>Description</Text>
+            <Text style={[styles.value, { marginTop: 4 }]}>{report.description}</Text>
+          </View>
+        </View>
+
+        {/* Risk Assessment Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Risk Assessment</Text>
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>Consequences</Text>
+              <Text style={[styles.value, { color: consequencesColors.text }]}>
+                {report.consequences}
+              </Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>Likelihood</Text>
+              <Text style={styles.value}>{report.likelihood}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>Status</Text>
+              <Text style={[styles.value, { color: statusColors.text }]}>
+                {report.status}
+              </Text>
+            </View>
+          </View>
+        </View>
+
         {/* Supporting Image Section */}
         {report.supportingImage && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Supporting Image</Text>
-            <Image
-              src={`${process.env.VITE_SUPABASE_URL || ''}/storage/v1/object/public/safety-images/${report.supportingImage}`}
-              style={{ maxWidth: 400, maxHeight: 300, marginVertical: 10 }}
-            />
+            {renderImage(report.supportingImage)}
           </View>
         )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.description}>{report.description}</Text>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Status & Severity</Text>
-          <View style={styles.infoGrid}>
-            <View style={styles.infoItem}>
-              <Text style={styles.label}>Status</Text>
-              <View style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}>
-                <Text style={[styles.statusText, { color: statusColors.text }]}>
-                  {report.status.toUpperCase()}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.label}>Consequences</Text>
-              <View style={[styles.statusBadge, { backgroundColor: consequencesColors.bg }]}>
-                <Text style={[styles.statusText, { color: consequencesColors.text }]}>
-                  {report.consequences.toUpperCase()}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {report.actionPlans.length > 0 ? (
+        {/* Action Plans Section */}
+        {report.actionPlans.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Action Plans</Text>
-            {report.actionPlans.map((plan, index) => (
-              <View key={plan.id || index} style={styles.actionPlanItem}>
+            {formattedActionPlans.map((plan) => (
+              <View key={plan.id} style={styles.actionPlanItem}>
                 <Text style={styles.value}>{plan.action}</Text>
-                <Text style={styles.label}>Due: {format(new Date(plan.due_date), 'MMM d, yyyy')}</Text>
+                <View style={styles.infoGrid}>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.label}>Due Date</Text>
+                    <Text style={styles.value}>{plan.formattedDueDate}</Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.label}>Responsible Person</Text>
+                    <Text style={styles.value}>{plan.responsible_person}</Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.label}>Follow-up Contact</Text>
+                    <Text style={styles.value}>{plan.follow_up_contact}</Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.label}>Status</Text>
+                    <Text style={[styles.value, { color: getStatusColor(plan.status).text }]}>
+                      {plan.status}
+                    </Text>
+                  </View>
+                </View>
+                {plan.supporting_image && renderImage(plan.supporting_image, true)}
               </View>
             ))}
           </View>
-        ) : null}
+        )}
       </Page>
     </Document>
   );
