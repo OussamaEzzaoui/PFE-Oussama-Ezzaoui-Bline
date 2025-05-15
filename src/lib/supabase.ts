@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { SafetyObservation, ActionPlan, MonthlySummary } from './types';
 import { format } from 'date-fns';
 
@@ -14,16 +14,51 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-// Create a Supabase client with the anon key for regular operations
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+let supabase: SupabaseClient;
+let supabaseAdmin: SupabaseClient;
 
-// Create a Supabase client with the service role key for admin operations
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
+if (typeof window !== 'undefined') {
+  if (!(window as any)._supabase) {
+    (window as any)._supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        storageKey: 'safety-app-auth',
+        persistSession: true,
+        detectSessionInUrl: true
+      }
+    });
   }
-});
+  supabase = (window as any)._supabase;
+
+  if (!(window as any)._supabaseAdmin) {
+    (window as any)._supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        storageKey: 'safety-app-admin-auth',
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false
+      }
+    });
+  }
+  supabaseAdmin = (window as any)._supabaseAdmin;
+} else {
+  supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      storageKey: 'safety-app-auth',
+      persistSession: true,
+      detectSessionInUrl: true
+    }
+  });
+  supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      storageKey: 'safety-app-admin-auth',
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false
+    }
+  });
+}
+
+export { supabase, supabaseAdmin };
 
 // Add connection test
 supabase.auth.getSession().then(({ data: { session }, error }) => {

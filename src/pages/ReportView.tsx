@@ -679,51 +679,72 @@ export function ReportView() {
                       <lucide.Briefcase className="h-4 w-4 text-green-600" />
                       <label className="text-sm font-medium text-gray-700">Project</label>
                     </div>
-                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                      {projects.find(p => p.id === project)?.name || ''}
-                    </div>
+                    <select
+                      value={project}
+                      onChange={(e) => setProject(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="">Select Project</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <lucide.Building2 className="h-4 w-4 text-green-600" />
                       <label className="text-sm font-medium text-gray-700">Company</label>
                     </div>
-                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                      {companies.find(c => c.id === company)?.name || ''}
-                    </div>
+                    <select
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="">Select Company</option>
+                      {companies.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
                 {/* Submitter & Date/Time */}
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-3 gap-6">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <lucide.User className="h-4 w-4 text-green-600" />
+                      <lucide.UserCircle className="h-4 w-4 text-green-600" />
                       <label className="text-sm font-medium text-gray-700">Submitter Name</label>
                     </div>
-                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                      {submitterName}
-                    </div>
+                    <input
+                      type="text"
+                      value={submitterName}
+                      onChange={(e) => setSubmitterName(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <lucide.Calendar className="h-4 w-4 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Date</label>
-                      </div>
-                      <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                        {date}
-                      </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Calendar className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Date</label>
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <lucide.Clock className="h-4 w-4 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Time</label>
-                      </div>
-                      <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                        {time}
-                      </div>
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Clock className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Time</label>
                     </div>
+                    <input
+                      type="time"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
                   </div>
                 </div>
 
@@ -734,18 +755,24 @@ export function ReportView() {
                       <lucide.Users2 className="h-4 w-4 text-green-600" />
                       <label className="text-sm font-medium text-gray-700">Department</label>
                     </div>
-                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                      {department}
-                    </div>
+                    <input
+                      type="text"
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <lucide.MapPin className="h-4 w-4 text-green-600" />
                       <label className="text-sm font-medium text-gray-700">Location</label>
                     </div>
-                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                      {location}
-                    </div>
+                    <input
+                      type="text"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
                   </div>
                 </div>
               </div>
@@ -763,9 +790,15 @@ export function ReportView() {
                     <lucide.Tag className="h-4 w-4 text-green-600" />
                     <label className="text-sm font-medium text-gray-700">Subject</label>
                   </div>
-                  <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                    {subject}
-                  </div>
+                  <select
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value as 'SOSV : Safety Observation Site Visit' | 'SOP' | 'RES')}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="SOSV : Safety Observation Site Visit">Safety Observation Site Visit (SOSV)</option>
+                    <option value="SOP">Standard Operating Procedure (SOP)</option>
+                    <option value="RES">Risk Evaluation Sheet (RES)</option>
+                  </select>
                 </div>
 
                 {/* Safety Categories */}
@@ -774,18 +807,26 @@ export function ReportView() {
                     <lucide.ShieldAlert className="h-4 w-4 text-green-600" />
                     <label className="text-sm font-medium text-gray-700">Safety Categories</label>
                   </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {safetyCategories
-                      .filter(cat => selectedCategories.includes(cat.id))
-                      .map(cat => (
-                        <span
-                          key={cat.id}
-                          className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800"
-                        >
-                          <lucide.Check className="h-4 w-4 mr-1" />
-                          {cat.name}
-                        </span>
-                      ))}
+                  <div className="grid grid-cols-2 gap-2">
+                    {safetyCategories.map(category => (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() => handleCategorySelect(category.id)}
+                        className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${
+                          selectedCategories.includes(category.id)
+                            ? 'bg-green-50 border-green-500 text-green-700'
+                            : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        {selectedCategories.includes(category.id) ? (
+                          <lucide.CheckSquare className="h-4 w-4" />
+                        ) : (
+                          <lucide.Square className="h-4 w-4" />
+                        )}
+                        {category.name}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -795,9 +836,12 @@ export function ReportView() {
                     <lucide.FileText className="h-4 w-4 text-green-600" />
                     <label className="text-sm font-medium text-gray-700">Description</label>
                   </div>
-                  <div className="px-4 py-2 bg-gray-50 rounded-lg whitespace-pre-wrap">
-                    {description}
-                  </div>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={4}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                  />
                 </div>
 
                 {/* Report Group */}
@@ -806,57 +850,94 @@ export function ReportView() {
                     <lucide.Users className="h-4 w-4 text-green-600" />
                     <label className="text-sm font-medium text-gray-700">Report Group</label>
                   </div>
-                  <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                    {reportGroup}
-                  </div>
+                  <select
+                    value={reportGroup}
+                    onChange={(e) => setReportGroup(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="">Select Group</option>
+                    <option value="finding">Finding</option>
+                    <option value="positive">Positive</option>
+                  </select>
                 </div>
               </div>
 
               {/* Risk Assessment */}
-              <div className="mt-8 space-y-6">
+              <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   <lucide.AlertTriangle className="h-5 w-5 text-green-600" />
                   <h2 className="text-lg font-semibold text-gray-900">Risk Assessment</h2>
                 </div>
 
-                {/* Consequences & Likelihood */}
                 <div className="grid grid-cols-2 gap-6">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <lucide.AlertTriangle className="h-4 w-4 text-green-600" />
+                      <lucide.AlertOctagon className="h-4 w-4 text-green-600" />
                       <label className="text-sm font-medium text-gray-700">Consequences</label>
                     </div>
-                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                      {consequences}
-                    </div>
+                    <select
+                      value={consequences}
+                      onChange={(e) => setConsequences(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="">Select Consequences</option>
+                      <option value="minor">Minor</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="major">Major</option>
+                      <option value="severe">Severe</option>
+                    </select>
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <lucide.BarChart2 className="h-4 w-4 text-green-600" />
                       <label className="text-sm font-medium text-gray-700">Likelihood</label>
                     </div>
-                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                      {likelihood}
-                    </div>
+                    <select
+                      value={likelihood}
+                      onChange={(e) => setLikelihood(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="">Select Likelihood</option>
+                      <option value="unlikely">Unlikely</option>
+                      <option value="possible">Possible</option>
+                      <option value="likely">Likely</option>
+                      <option value="very-likely">Very Likely</option>
+                    </select>
                   </div>
                 </div>
+              </div>
 
-                {/* Status */}
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <lucide.Activity className="h-4 w-4 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Status</label>
-                  </div>
-                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                    status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                  }`}>
-                    {status === 'open' ? (
-                      <lucide.CheckCircle className="h-4 w-4 mr-1" />
-                    ) : (
-                      <lucide.XCircle className="h-4 w-4 mr-1" />
-                    )}
-                    {status}
-                  </div>
+              {/* Status */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <lucide.Activity className="h-4 w-4 text-green-600" />
+                  <label className="text-sm font-medium text-gray-700">Status</label>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setStatus('open')}
+                    className={`py-2 px-4 rounded-lg border transition-colors flex items-center justify-center gap-2 ${
+                      status === 'open'
+                        ? 'bg-green-50 border-green-500 text-green-700'
+                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <lucide.CheckCircle className="h-4 w-4" />
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatus('closed')}
+                    className={`py-2 px-4 rounded-lg border transition-colors flex items-center justify-center gap-2 ${
+                      status === 'closed'
+                        ? 'bg-gray-100 border-gray-500 text-gray-700'
+                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <lucide.XCircle className="h-4 w-4" />
+                    Closed
+                  </button>
                 </div>
               </div>
 
@@ -1257,34 +1338,32 @@ export function ReportView() {
                 </div>
 
                 {/* Submitter & Date/Time */}
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-3 gap-6">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <lucide.User className="h-4 w-4 text-green-600" />
+                      <lucide.UserCircle className="h-4 w-4 text-green-600" />
                       <label className="text-sm font-medium text-gray-700">Submitter Name</label>
                     </div>
                     <div className="px-4 py-2 bg-gray-50 rounded-lg">
                       {submitterName}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <lucide.Calendar className="h-4 w-4 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Date</label>
-                      </div>
-                      <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                        {date}
-                      </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Calendar className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Date</label>
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <lucide.Clock className="h-4 w-4 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Time</label>
-                      </div>
-                      <div className="px-4 py-2 bg-gray-50 rounded-lg">
-                        {time}
-                      </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {date}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <lucide.Clock className="h-4 w-4 text-green-600" />
+                      <label className="text-sm font-medium text-gray-700">Time</label>
+                    </div>
+                    <div className="px-4 py-2 bg-gray-50 rounded-lg">
+                      {time}
                     </div>
                   </div>
                 </div>

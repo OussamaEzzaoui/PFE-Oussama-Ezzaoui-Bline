@@ -44,7 +44,7 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
     setLoading(true);
     try {
       const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage();
+      let page = pdfDoc.addPage();
       const { width, height } = page.getSize();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontSize = 12;
@@ -93,85 +93,130 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
       // Add images if included
       if (includeImages && data.supporting_image) {
         try {
-          // Check if the image is already a base64 string
-          if (data.supporting_image.startsWith('data:image')) {
-            // Convert base64 to Uint8Array
-            const base64Data = data.supporting_image.split(',')[1];
-            const binaryString = window.atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            
-            // Try to embed as PNG first, then JPG if that fails
+          let imageData;
+          if (data.supporting_image.startsWith('http')) {
+            // If it's already a full URL, fetch it directly
             try {
-              const image = await pdfDoc.embedPng(bytes);
-              const imageDims = image.scale(0.5);
-              page.drawImage(image, {
-                x: 50,
-                y: y - imageDims.height,
-                width: imageDims.width,
-                height: imageDims.height
-              });
-            } catch (pngError) {
-              try {
-                const image = await pdfDoc.embedJpg(bytes);
-                const imageDims = image.scale(0.5);
-                page.drawImage(image, {
-                  x: 50,
-                  y: y - imageDims.height,
-                  width: imageDims.width,
-                  height: imageDims.height
-                });
-              } catch (jpgError) {
-                console.error('Failed to embed image as PNG or JPG:', jpgError);
+              const response = await fetch(data.supporting_image);
+              if (!response.ok) {
+                throw new Error(`Failed to fetch image: ${response.statusText}`);
               }
+              imageData = await response.blob();
+            } catch (error) {
+              console.error('Error fetching image from URL:', error);
+              throw error;
             }
           } else {
-            // Handle URL or path
-            let imageData;
-            if (data.supporting_image.startsWith('http')) {
-              // If it's already a full URL, fetch it directly
-              const response = await fetch(data.supporting_image);
-              imageData = await response.blob();
-            } else {
-              // Download from Supabase if it's a path
-              const { data: supabaseData, error: imageError } = await supabase.storage
+            try {
+              // Clean up the image path by removing all leading and double slashes
+              const cleanPath = data.supporting_image.replace(/^\/+/, '').replace(/\/+/g, '/');
+              console.log('Attempting to download image from path:', cleanPath);
+
+              // Get the public URL first
+              const { data: publicUrl } = supabase.storage
                 .from('safety-images')
-                .download(data.supporting_image);
+                .getPublicUrl(cleanPath);
 
-              if (imageError) {
-                throw imageError;
+              if (!publicUrl?.publicUrl) {
+                throw new Error('Failed to get public URL for image');
               }
-              imageData = supabaseData;
-            }
 
-            if (imageData) {
+              // Fetch the image using the public URL
+              const response = await fetch(publicUrl.publicUrl);
+              if (!response.ok) {
+                throw new Error(`Failed to fetch image: ${response.statusText}`);
+              }
+              
+              imageData = await response.blob();
+              console.log('Successfully downloaded image, size:', imageData.size);
+            } catch (error) {
+              console.error('Error downloading image from Supabase:', error);
+              // Instead of continue, we'll set imageData to null
+              page.drawText('Image could not be loaded - Error downloading image', {
+                x: 50,
+                y: y - 20,
+                size: 10,
+                color: rgb(0.7, 0, 0)
+              });
+              y = y - 30;
+              imageData = null;
+            }
+          }
+
+          if (imageData) {
+            try {
               const imageBytes = await imageData.arrayBuffer();
-              // Try to embed as PNG first, then JPG if that fails
-              try {
-                const image = await pdfDoc.embedPng(imageBytes);
-                const imageDims = image.scale(0.5);
-                page.drawImage(image, {
-                  x: 50,
-                  y: y - imageDims.height,
-                  width: imageDims.width,
-                  height: imageDims.height
-                });
-              } catch (pngError) {
+              let imageEmbedded = false;
+
+              // Try different image formats with proper typing
+              const embedImage = async (method: 'embedPng' | 'embedJpg', format: string) => {
                 try {
-                  const image = await pdfDoc.embedJpg(imageBytes);
-                  const imageDims = image.scale(0.5);
+                  const image = await pdfDoc[method](imageBytes);
+                  
+                  // Calculate dimensions to fit within page width while maintaining aspect ratio
+                  const maxWidth = width - 100; // 50px margin on each side
+                  const scale = maxWidth / image.width;
+                  const scaledWidth = image.width * scale;
+                  const scaledHeight = image.height * scale;
+
+                  // Update vertical position
+                  y = y - scaledHeight - 20; // Add 20px padding
+
+                  // Ensure we don't go off the bottom of the page
+                  if (y < 50) {
+                    // Add a new page if we're too close to the bottom
+                    page = pdfDoc.addPage();
+                    y = page.getSize().height - 50;
+                  }
+
+                  console.log('Drawing image with dimensions:', {
+                    width: scaledWidth,
+                    height: scaledHeight,
+                    y
+                  });
+
+                  // Draw the image
                   page.drawImage(image, {
                     x: 50,
-                    y: y - imageDims.height,
-                    width: imageDims.width,
-                    height: imageDims.height
+                    y,
+                    width: scaledWidth,
+                    height: scaledHeight
                   });
-                } catch (jpgError) {
-                  console.error('Failed to embed image as PNG or JPG:', jpgError);
+
+                  // Update vertical position for next content
+                  y = y - 20; // Add some padding after the image
+                  return true;
+                } catch (err) {
+                  console.warn(`Failed to embed image as ${format}, trying next format...`, err);
+                  return false;
                 }
+              };
+
+              // Try PNG first, then JPG
+              imageEmbedded = await embedImage('embedPng', 'PNG') || 
+                             await embedImage('embedJpg', 'JPEG');
+
+              if (!imageEmbedded) {
+                console.error('Failed to embed image in any supported format');
+                // Add a text note in the PDF about the failed image
+                page.drawText('Image could not be included - unsupported format', {
+                  x: 50,
+                  y: y - 20,
+                  size: 10,
+                  color: rgb(0.7, 0, 0)
+                });
+                y = y - 30; // Move down for next content
               }
+            } catch (error) {
+              console.error('Error processing image for PDF:', error);
+              // Add error message to PDF
+              page.drawText('Error processing image for PDF', {
+                x: 50,
+                y: y - 20,
+                size: 10,
+                color: rgb(0.7, 0, 0)
+              });
+              y = y - 30;
             }
           }
         } catch (error) {
@@ -189,6 +234,15 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
                 // If it's already a full URL, fetch it directly
                 const response = await fetch(plan.supporting_image);
                 imageData = await response.blob();
+              } else if (plan.supporting_image.startsWith('data:image/')) {
+                // Handle base64 Data URL
+                const base64 = plan.supporting_image.split(',')[1];
+                const byteCharacters = atob(base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                  byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                imageData = new Uint8Array(byteNumbers);
               } else {
                 // Download from Supabase if it's a path
                 const { data: supabaseData, error: imageError } = await supabase.storage
@@ -202,7 +256,14 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
               }
 
               if (imageData) {
-                const imageBytes = await imageData.arrayBuffer();
+                let imageBytes;
+                if (imageData instanceof Blob) {
+                  imageBytes = await imageData.arrayBuffer();
+                } else if (imageData instanceof Uint8Array) {
+                  imageBytes = imageData;
+                } else {
+                  imageBytes = imageData;
+                }
                 // Try to embed as PNG first, then JPG if that fails
                 try {
                   const image = await pdfDoc.embedPng(imageBytes);
@@ -304,10 +365,12 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="exportFormat" className="block text-sm font-medium text-gray-700 mb-1">
               Export Format
             </label>
             <select
+              id="exportFormat"
+              name="exportFormat"
               value={exportFormat.value}
               onChange={(e) => setExportFormat({
                 value: e.target.value,
@@ -321,27 +384,33 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
           </div>
 
           <div className="space-y-2">
-            <label className="flex items-center">
+            <label htmlFor="includeImages" className="flex items-center">
               <input
+                id="includeImages"
                 type="checkbox"
+                name="includeImages"
                 checked={includeImages}
                 onChange={(e) => setIncludeImages(e.target.checked)}
                 className="mr-2"
               />
               Include Images
             </label>
-            <label className="flex items-center">
+            <label htmlFor="includeActionPlans" className="flex items-center">
               <input
+                id="includeActionPlans"
                 type="checkbox"
+                name="includeActionPlans"
                 checked={includeActionPlans}
                 onChange={(e) => setIncludeActionPlans(e.target.checked)}
                 className="mr-2"
               />
               Include Action Plans
             </label>
-            <label className="flex items-center">
+            <label htmlFor="includeSafetyCategories" className="flex items-center">
               <input
+                id="includeSafetyCategories"
                 type="checkbox"
+                name="includeSafetyCategories"
                 checked={includeSafetyCategories}
                 onChange={(e) => setIncludeSafetyCategories(e.target.checked)}
                 className="mr-2"
