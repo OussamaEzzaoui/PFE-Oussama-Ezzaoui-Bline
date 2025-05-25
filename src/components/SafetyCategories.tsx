@@ -34,7 +34,7 @@ const iconMap: Record<string, keyof typeof lucide> = {
 export function SafetyCategories({ selectedCategories, onSelectCategory, categories, error }: SafetyCategoriesProps) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
         {categories.map((category) => {
           // Get the icon component from lucide, fallback to AlertCircle if not found
           const Icon = lucide[iconMap[category.icon] || 'AlertCircle'] as React.ElementType;

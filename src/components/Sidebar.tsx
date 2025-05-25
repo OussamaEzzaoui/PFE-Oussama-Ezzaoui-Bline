@@ -12,10 +12,9 @@ interface NavItem {
   children?: NavItem[];
 }
 
-export function Sidebar() {
+export function Sidebar({ isOpen }: { isOpen: boolean }) {
   const location = useLocation();
   const { isAdmin } = useAuth();
-  const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 768);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   // Navigation items configuration
@@ -75,16 +74,6 @@ export function Sidebar() {
       : []),
   ];
 
-  // Handle window resize
-  useEffect(() => {
-    const handleResize = () => {
-      setIsCollapsed(window.innerWidth < 768);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
   // Toggle submenu expansion
   const toggleExpanded = (path: string) => {
     setExpandedItems((prev) =>
@@ -123,7 +112,7 @@ export function Sidebar() {
               aria-expanded={isExpanded}
             >
               <Icon className="h-5 w-5 flex-shrink-0" />
-              {!isCollapsed && (
+              {isOpen && (
                 <>
                   <span className="flex-1 text-left">{item.label}</span>
                   {hasChildren && (
@@ -147,7 +136,7 @@ export function Sidebar() {
               aria-current={active ? 'page' : undefined}
             >
               <Icon className="h-5 w-5 flex-shrink-0" />
-              {!isCollapsed && <span>{item.label}</span>}
+              {isOpen && <span>{item.label}</span>}
             </Link>
           )}
           {hasChildren && isExpanded && (
@@ -160,9 +149,9 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`fixed top-0 left-0 h-screen bg-white border-r border-gray-200 transition-all z-50 ${
-        isCollapsed ? 'w-16' : 'w-64'
-      }`}
+      className={`fixed top-0 left-0 h-screen bg-white border-r border-gray-200 z-50 w-[250px] transition-all duration-300 ease-in-out
+        ${isOpen ? 'left-0' : '-left-[250px]'}
+        min-w-0 overflow-x-hidden overflow-y-auto flex flex-col`}
     >
       {/* Header */}
       <div className="flex flex-col items-center justify-center px-4 border-b border-gray-200 py-6">
@@ -171,7 +160,7 @@ export function Sidebar() {
           alt="Safety B Line by ASPC Logo"
           className="h-36 w-auto mb-0 drop-shadow-lg"
         />
-        <span className={`font-semibold text-gray-900 text-xl text-center mt-0 transition-opacity duration-200 ${isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 w-auto'}`}>Safety Portal</span>
+        <span className={`font-semibold text-gray-900 text-xl text-center mt-0 transition-opacity duration-200 ${isOpen ? 'opacity-100 w-auto' : 'opacity-0 w-0 overflow-hidden'}`}>Safety Portal</span>
       </div>
 
       {/* New Report Button */}
@@ -179,11 +168,11 @@ export function Sidebar() {
         <Link
           to="/reports/new"
           className={`w-full flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${
-            isCollapsed ? 'justify-center' : ''
+            !isOpen ? 'justify-center' : ''
           }`}
         >
           <lucide.Plus className="h-5 w-5 flex-shrink-0" />
-          {!isCollapsed && <span>New Report</span>}
+          {isOpen && <span>New Report</span>}
         </Link>
       </div>
 

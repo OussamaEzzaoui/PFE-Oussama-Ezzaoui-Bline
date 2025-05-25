@@ -34,15 +34,15 @@ function ReportDetailsModal({ report, onClose }: ReportDetailsModalProps) {
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <h3 className="text-sm font-medium text-gray-500">Subject</h3>
+              <h3 className="text-xs sm:text-sm md:text-base font-medium text-gray-500">Subject</h3>
               <p className="mt-1 text-gray-900">{report.subject}</p>
             </div>
             <div>
-              <h3 className="text-sm font-medium text-gray-500">Date</h3>
+              <h3 className="text-xs sm:text-sm md:text-base font-medium text-gray-500">Date</h3>
               <p className="mt-1 text-gray-900">{format(parseISO(report.date), 'PPP')}</p>
             </div>
             <div>
-              <h3 className="text-sm font-medium text-gray-500">Status</h3>
+              <h3 className="text-xs sm:text-sm md:text-base font-medium text-gray-500">Status</h3>
               <p className="mt-1">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   report.status === 'open'
@@ -54,7 +54,7 @@ function ReportDetailsModal({ report, onClose }: ReportDetailsModalProps) {
               </p>
             </div>
             <div>
-              <h3 className="text-sm font-medium text-gray-500">Severity</h3>
+              <h3 className="text-xs sm:text-sm md:text-base font-medium text-gray-500">Severity</h3>
               <p className="mt-1">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   report.consequences === 'severe'

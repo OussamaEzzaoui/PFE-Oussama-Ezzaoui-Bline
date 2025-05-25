@@ -29,10 +29,36 @@ const ProtectedRoute = ({ children, adminOnly = false }: { children: React.React
 
 // Layout wrapper with sidebar
 const Layout = ({ children }: { children: React.ReactNode }) => {
+  const [isSidebarOpen, setIsSidebarOpen] = React.useState(window.innerWidth >= 768);
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) setIsSidebarOpen(false);
+      else setIsSidebarOpen(true);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
-      <main className="flex-1 ml-16 md:ml-64 p-4">{children}</main>
+    <div>
+      {/* Sidebar */}
+      <Sidebar isOpen={isSidebarOpen} />
+      {/* Toggle Button */}
+      <button
+        onClick={() => setIsSidebarOpen((open) => !open)}
+        className="fixed top-4 left-4 z-50 p-3 rounded-full bg-green-600 text-white shadow-lg hover:bg-green-700 transition-colors focus:outline-none"
+        aria-label={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        type="button"
+      >
+        {isSidebarOpen ? (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+        )}
+      </button>
+      {/* Main content */}
+      <main className={`main transition-all duration-300 ${isSidebarOpen ? 'ml-[250px]' : 'ml-0'}`}>{children}</main>
     </div>
   );
 };

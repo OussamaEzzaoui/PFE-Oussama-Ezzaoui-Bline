@@ -1,24 +1,25 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import * as lucide from 'lucide-react';
+import type { User } from '@supabase/supabase-js';
 
 interface AuthContextType {
-  user: any;
+  user: User | null;
   isAdmin: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Helper to fetch profile and set admin status
-    const fetchProfileAndSetAdmin = async (user: any) => {
+    const fetchProfileAndSetAdmin = async (user: User | null) => {
       if (!user) {
         setIsAdmin(false);
         return;

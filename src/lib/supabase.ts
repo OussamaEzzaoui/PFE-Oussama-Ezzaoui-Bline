@@ -61,7 +61,7 @@ if (typeof window !== 'undefined') {
 export { supabase, supabaseAdmin };
 
 // Add connection test
-supabase.auth.getSession().then(({ data: { session }, error }) => {
+supabase.auth.getSession().then(({ error }) => {
   if (error) {
     console.error('Supabase connection error:', error);
   } else {

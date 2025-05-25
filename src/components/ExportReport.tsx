@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { saveAs } from 'file-saver';
-import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { Report, SafetyCategory, ActionPlan } from '../lib/types';
 import * as lucide from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { Download, FileText, FileSpreadsheet } from 'lucide-react';
+import { PDFDocument, rgb, StandardFonts, PDFPage, PDFFont } from 'pdf-lib';
 
 interface ExportReportProps {
   data: Report;
@@ -146,70 +144,74 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
           if (imageData) {
             try {
               const imageBytes = await imageData.arrayBuffer();
-              let imageEmbedded = false;
+              console.log('Image Blob size:', imageData.size);
+              console.log('Image bytes length:', imageBytes.byteLength);
 
-              // Try different image formats with proper typing
-              const embedImage = async (method: 'embedPng' | 'embedJpg', format: string) => {
+              // Only try to embed as JPG if the URL ends with .jpg or .jpeg
+              if (data.supporting_image.match(/\.(jpg|jpeg)$/i)) {
                 try {
-                  const image = await pdfDoc[method](imageBytes);
-                  
-                  // Calculate dimensions to fit within page width while maintaining aspect ratio
-                  const maxWidth = width - 100; // 50px margin on each side
+                  const image = await pdfDoc.embedJpg(imageBytes);
+                  const maxWidth = width - 100;
                   const scale = maxWidth / image.width;
                   const scaledWidth = image.width * scale;
                   const scaledHeight = image.height * scale;
-
-                  // Update vertical position
-                  y = y - scaledHeight - 20; // Add 20px padding
-
-                  // Ensure we don't go off the bottom of the page
+                  y = y - scaledHeight - 20;
                   if (y < 50) {
-                    // Add a new page if we're too close to the bottom
                     page = pdfDoc.addPage();
                     y = page.getSize().height - 50;
                   }
-
-                  console.log('Drawing image with dimensions:', {
-                    width: scaledWidth,
-                    height: scaledHeight,
-                    y
-                  });
-
-                  // Draw the image
                   page.drawImage(image, {
                     x: 50,
                     y,
                     width: scaledWidth,
                     height: scaledHeight
                   });
-
-                  // Update vertical position for next content
-                  y = y - 20; // Add some padding after the image
-                  return true;
-                } catch (err) {
-                  console.warn(`Failed to embed image as ${format}, trying next format...`, err);
-                  return false;
+                  y = y - 20;
+                  console.log('JPEG image embedded successfully');
+                } catch (jpgError) {
+                  console.error('Failed to embed image as JPG:', jpgError);
+                  page.drawText('Image could not be included - unsupported format', {
+                    x: 50,
+                    y: y - 20,
+                    size: 10,
+                    color: rgb(0.7, 0, 0)
+                  });
+                  y = y - 30;
                 }
-              };
-
-              // Try PNG first, then JPG
-              imageEmbedded = await embedImage('embedPng', 'PNG') || 
-                             await embedImage('embedJpg', 'JPEG');
-
-              if (!imageEmbedded) {
-                console.error('Failed to embed image in any supported format');
-                // Add a text note in the PDF about the failed image
-                page.drawText('Image could not be included - unsupported format', {
-                  x: 50,
-                  y: y - 20,
-                  size: 10,
-                  color: rgb(0.7, 0, 0)
-                });
-                y = y - 30; // Move down for next content
+              } else {
+                // Fallback for other formats (PNG, etc.)
+                try {
+                  const image = await pdfDoc.embedPng(imageBytes);
+                  const maxWidth = width - 100;
+                  const scale = maxWidth / image.width;
+                  const scaledWidth = image.width * scale;
+                  const scaledHeight = image.height * scale;
+                  y = y - scaledHeight - 20;
+                  if (y < 50) {
+                    page = pdfDoc.addPage();
+                    y = page.getSize().height - 50;
+                  }
+                  page.drawImage(image, {
+                    x: 50,
+                    y,
+                    width: scaledWidth,
+                    height: scaledHeight
+                  });
+                  y = y - 20;
+                  console.log('PNG image embedded successfully');
+                } catch (pngError) {
+                  console.error('Failed to embed image as PNG:', pngError);
+                  page.drawText('Image could not be included - unsupported format', {
+                    x: 50,
+                    y: y - 20,
+                    size: 10,
+                    color: rgb(0.7, 0, 0)
+                  });
+                  y = y - 30;
+                }
               }
             } catch (error) {
               console.error('Error processing image for PDF:', error);
-              // Add error message to PDF
               page.drawText('Error processing image for PDF', {
                 x: 50,
                 y: y - 20,
@@ -266,26 +268,78 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
                 }
                 // Try to embed as PNG first, then JPG if that fails
                 try {
+                  console.log('Attempting to embed action plan image as PNG...');
                   const image = await pdfDoc.embedPng(imageBytes);
                   const imageDims = image.scale(0.5);
+                  // Clamp y to visible range
+                  let drawY = y - imageDims.height;
+                  if (drawY < 50) {
+                    page = pdfDoc.addPage();
+                    drawY = page.getSize().height - 50 - imageDims.height;
+                    y = page.getSize().height - 50;
+                  }
+                  // Log all draw parameters
+                  console.log('Drawing action plan image at:', {
+                    x: 50,
+                    y: drawY,
+                    width: imageDims.width,
+                    height: imageDims.height,
+                    page: pdfDoc.getPageCount()
+                  });
                   page.drawImage(image, {
                     x: 50,
-                    y: y - imageDims.height,
+                    y: drawY,
                     width: imageDims.width,
                     height: imageDims.height
                   });
+                  y = drawY - 20;
+                  // Test: draw a fixed-size image at a fixed position for debugging
+                  /*
+                  page.drawImage(image, {
+                    x: 50,
+                    y: 500,
+                    width: 200,
+                    height: 200
+                  });
+                  */
+                  console.log('Action plan image drawn at y:', y);
                 } catch (pngError) {
                   try {
+                    console.log('Attempting to embed action plan image as JPG...');
                     const image = await pdfDoc.embedJpg(imageBytes);
                     const imageDims = image.scale(0.5);
+                    let drawY = y - imageDims.height;
+                    if (drawY < 50) {
+                      page = pdfDoc.addPage();
+                      drawY = page.getSize().height - 50 - imageDims.height;
+                      y = page.getSize().height - 50;
+                    }
+                    console.log('Drawing action plan image at:', {
+                      x: 50,
+                      y: drawY,
+                      width: imageDims.width,
+                      height: imageDims.height,
+                      page: pdfDoc.getPageCount()
+                    });
                     page.drawImage(image, {
                       x: 50,
-                      y: y - imageDims.height,
+                      y: drawY,
                       width: imageDims.width,
                       height: imageDims.height
                     });
+                    y = drawY - 20;
+                    // Test: draw a fixed-size image at a fixed position for debugging
+                    /*
+                    page.drawImage(image, {
+                      x: 50,
+                      y: 500,
+                      width: 200,
+                      height: 200
+                    });
+                    */
+                    console.log('Action plan image drawn at y:', y);
                   } catch (jpgError) {
-                    console.error('Failed to embed image as PNG or JPG:', jpgError);
+                    console.error('Failed to embed action plan image as PNG or JPG:', jpgError);
                   }
                 }
               }
@@ -440,12 +494,12 @@ export function ExportReport({ data, onClose }: ExportReportProps) {
   );
 }
 
-const addActionPlanToPDF = async (pdfDoc: PDFDocument, actionPlan: ActionPlan, y: number, page: any, font: any) => {
+const addActionPlanToPDF = async (pdfDoc: PDFDocument, actionPlan: ActionPlan, y: number, page: PDFPage, font: PDFFont) => {
   // ... existing code ...
   return y;
 };
 
-const addActionPlansToPDF = async (pdfDoc: PDFDocument, actionPlans: ActionPlan[], y: number, page: any, font: any) => {
+const addActionPlansToPDF = async (pdfDoc: PDFDocument, actionPlans: ActionPlan[], y: number, page: PDFPage, font: PDFFont) => {
   let currentY = y;
   for (const plan of actionPlans) {
     currentY = await addActionPlanToPDF(pdfDoc, plan, currentY, page, font);
@@ -459,7 +513,7 @@ const addActionPlansToCSV = (actionPlans: ActionPlan[]): string => {
   ).join('\n');
 };
 
-const addSafetyCategoriesToPDF = async (pdfDoc: PDFDocument, categories: SafetyCategory[], y: number, page: any, font: any) => {
+const addSafetyCategoriesToPDF = async (pdfDoc: PDFDocument, categories: SafetyCategory[], y: number, page: PDFPage, font: PDFFont) => {
   // ... existing code ...
   return y;
 };

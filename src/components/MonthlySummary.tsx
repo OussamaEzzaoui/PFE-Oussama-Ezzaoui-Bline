@@ -66,6 +66,13 @@ interface MonthlySummary {
   updated_at?: string;
 }
 
+interface MonthlyCategoryData {
+  category: string;
+  severity: string;
+  count: number;
+  week_start?: string;
+}
+
 export function MonthlySummary() {
   const [summary, setSummary] = useState<MonthlySummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,7 +84,7 @@ export function MonthlySummary() {
       end: new Date(),
     },
   });
-  const [monthlyCategoryData, setMonthlyCategoryData] = useState<any[]>([]);
+  const [monthlyCategoryData, setMonthlyCategoryData] = useState<MonthlyCategoryData[]>([]);
   const [monthlyCategoryLabels, setMonthlyCategoryLabels] = useState<string[]>([]);
   const [monthlyCategorySeverityMap, setMonthlyCategorySeverityMap] = useState<Record<string, Record<string, number>>>({});
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
@@ -428,7 +435,7 @@ export function MonthlySummary() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Monthly Summary</h2>
+        <h2 className="text-base sm:text-lg md:text-2xl font-bold">Monthly Summary</h2>
         <div className="flex gap-2 items-center">
           <label htmlFor="month-select" className="mr-2 font-medium">Month:</label>
           <select
@@ -446,39 +453,19 @@ export function MonthlySummary() {
         </div>
       </div>
 
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Monthly Summary</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleExport('pdf')}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-          >
-            <Download size={16} />
-            Export PDF
-          </button>
-          <button
-            onClick={() => handleExport('csv')}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            <Download size={16} />
-            Export CSV
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Monthly Safety Categories by Severity Chart - now at the top, replacing the old pie chart */}
-        <div className="bg-white p-6 rounded-lg shadow print:shadow-none">
-          <h3 className="text-lg font-semibold mb-4">Safety Categories by Severity (Monthly)</h3>
-          <div className="h-[400px]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {/* Monthly Safety Categories by Severity Chart */}
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow print:shadow-none">
+          <h3 className="text-base sm:text-lg md:text-xl font-semibold mb-4">Safety Categories by Severity (Monthly)</h3>
+          <div className="h-[300px] sm:h-[400px]">
             <ChartJSBar data={monthlyChartData} options={monthlyChartOptions} />
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow print:shadow-none">
-          <h3 className="text-lg font-semibold mb-4">Report Status</h3>
-          <div className="w-full h-[400px] flex items-center justify-center" ref={actionStatusChartRef}>
-            <ResponsiveContainer width="100%" height={350}>
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow print:shadow-none">
+          <h3 className="text-base sm:text-lg md:text-xl font-semibold mb-4">Report Status</h3>
+          <div className="w-full h-[300px] sm:h-[400px] flex items-center justify-center" ref={actionStatusChartRef}>
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart 
                 data={normalizedActionStatusData}
                 margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
@@ -508,10 +495,10 @@ export function MonthlySummary() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow print:shadow-none">
-          <h3 className="text-lg font-semibold mb-4">Risk Levels</h3>
-          <div className="w-full h-[400px] flex items-center justify-center" ref={riskLevelsChartRef}>
-            <ResponsiveContainer width="100%" height={350}>
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow print:shadow-none">
+          <h3 className="text-base sm:text-lg md:text-xl font-semibold mb-4">Risk Levels</h3>
+          <div className="w-full h-[300px] sm:h-[400px] flex items-center justify-center" ref={riskLevelsChartRef}>
+            <ResponsiveContainer width="100%" height="100%">
               <BarChart 
                 data={riskLevelsData}
                 margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
@@ -541,7 +528,7 @@ export function MonthlySummary() {
         </div>
 
         <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold mb-4">Summary Statistics</h3>
+          <h3 className="text-base sm:text-lg md:text-xl font-semibold mb-4">Summary Statistics</h3>
           <div className="space-y-4">
             <div className="flex justify-between">
               <span className="font-medium">Total Observations:</span>

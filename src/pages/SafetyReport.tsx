@@ -416,7 +416,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
         <div className="bg-white rounded-lg shadow-sm p-4 flex justify-between items-center">
           <div className="flex items-center justify-center gap-6">
             <img src={safetyBLineLogo} alt="Safety B Line by ASPC Logo" className="h-40 w-auto object-contain" />
-            <h1 className="text-2xl font-bold text-gray-900">Safety Observation Report</h1>
+            <h1 className="text-2xl font-bold text-gray-900">B-line reports platform</h1>
           </div>
           <div className="flex items-center gap-4">
             {reportData && (
@@ -454,13 +454,13 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
             <div className="bg-white rounded-lg shadow-sm p-6">
               {/* General Information Section */}
               <div className="bg-gray-50 p-6 rounded-lg mb-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">General Information</h2>
+                <h2 className="text-base sm:text-lg md:text-2xl font-semibold text-gray-900 mb-4">General Information</h2>
                 <div className="grid grid-cols-2 gap-6">
                   {/* Project */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <lucide.Briefcase className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Project</label>
+                      <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Project</label>
                     </div>
                     <select 
                       value={project}
@@ -482,7 +482,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <lucide.Building2 className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Company</label>
+                      <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Company</label>
                     </div>
                     <select 
                       value={company}
@@ -504,7 +504,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <lucide.UserCircle className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Submitter Name</label>
+                      <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Submitter Name</label>
                     </div>
                     <input
                       type="text"
@@ -518,7 +518,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <lucide.Users2 className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Department</label>
+                      <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Department</label>
                     </div>
                     <input
                       type="text"
@@ -539,15 +539,15 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <lucide.Calendar className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Date & Time</label>
+                      <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Date & Time</label>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
                         type="date"
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
                         required
-                        className={`w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+                        className={`w-full px-3 py-2 sm:px-4 sm:py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
                           validationErrors.date ? 'border-red-500' : ''
                         }`}
                       />
@@ -556,7 +556,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                         value={time}
                         onChange={(e) => setTime(e.target.value)}
                         required
-                        className={`w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+                        className={`w-full px-3 py-2 sm:px-4 sm:py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent ${
                           validationErrors.time ? 'border-red-500' : ''
                         }`}
                       />
@@ -572,13 +572,13 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
 
               {/* Observation Details Section */}
               <div className="bg-gray-50 p-6 rounded-lg mb-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Observation Details</h2>
+                <h2 className="text-base sm:text-lg md:text-2xl font-semibold text-gray-900 mb-4">Observation Details</h2>
 
                 {/* Subject Type */}
                 <div className="space-y-4 mb-6">
                   <div className="flex items-center gap-2">
                     <lucide.FileText className="h-5 w-5 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Subject</label>
+                    <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Subject</label>
                   </div>
                   <select
                     value={subject}
@@ -600,7 +600,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                 <div className="mb-6">
                   <div className="flex items-center gap-2 mb-2">
                     <lucide.ShieldAlert className="h-5 w-5 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Safety Categories</label>
+                    <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Safety Categories</label>
                   </div>
                   <SafetyCategories
                     selectedCategories={selectedCategories}
@@ -614,7 +614,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                 <div className="space-y-4 mb-6">
                   <div className="flex items-center gap-2">
                     <lucide.MapPin className="h-5 w-5 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Location</label>
+                    <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Location</label>
                   </div>
                   <input
                     type="text"
@@ -635,7 +635,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                 <div className="space-y-4 mb-6">
                   <div className="flex items-center gap-2">
                     <lucide.FileText className="h-5 w-5 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Description</label>
+                    <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Description</label>
                   </div>
                   <textarea
                     value={description}
@@ -656,7 +656,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                 <div className="space-y-4 mb-6">
                   <div className="flex items-center gap-2">
                     <lucide.Users className="h-5 w-5 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Report Group</label>
+                    <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Report Group</label>
                   </div>
                   <select
                     value={reportGroup}
@@ -674,12 +674,12 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                 </div>
 
                 {/* Risk Assessment */}
-                <div className="grid grid-cols-2 gap-6 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6">
                   {/* Potential Consequences */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <lucide.AlertTriangle className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Potential Consequences</label>
+                      <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Potential Consequences</label>
                     </div>
                     <select
                       value={consequences}
@@ -702,7 +702,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                   <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <lucide.BarChart2 className="h-5 w-5 text-green-600" />
-                      <label className="text-sm font-medium text-gray-700">Likelihood</label>
+                      <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Likelihood</label>
                     </div>
                     <select
                       value={likelihood}
@@ -726,9 +726,9 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                 <div className="space-y-4 mb-6">
                   <div className="flex items-center gap-2">
                     <lucide.Activity className="h-5 w-5 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Status</label>
+                    <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Status</label>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button
                       type="button"
                       onClick={() => setStatus('open')}
@@ -758,7 +758,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
                     <lucide.Image className="h-5 w-5 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Supporting Image</label>
+                    <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Supporting Image</label>
                   </div>
                   <div className="flex items-center gap-4">
                     <input
@@ -795,7 +795,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-2">
                     <lucide.CheckSquare className="h-5 w-5 text-green-600" />
-                    <h2 className="text-lg font-semibold text-gray-900">Action Plan Required?</h2>
+                    <h2 className="text-base sm:text-lg md:text-2xl font-semibold text-gray-900">Action Plan Required?</h2>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <button
@@ -842,7 +842,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <lucide.FileText className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Action</label>
+                        <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Action</label>
                       </div>
                       <textarea
                         value={currentActionPlan.action}
@@ -860,7 +860,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <lucide.Image className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Supporting Image</label>
+                        <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Supporting Image</label>
                       </div>
                       <div className="flex items-center gap-4">
                         <input
@@ -895,7 +895,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <lucide.Calendar className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Due Date</label>
+                        <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Due Date</label>
                       </div>
                       <input
                         type="date"
@@ -913,7 +913,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <lucide.User className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Responsible Person</label>
+                        <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Responsible Person</label>
                       </div>
                       <input
                         type="text"
@@ -931,7 +931,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <lucide.UserCheck className="h-5 w-5 text-green-600" />
-                        <label className="text-sm font-medium text-gray-700">Follow-up Contact</label>
+                        <label className="text-xs sm:text-sm md:text-base font-medium text-gray-700">Follow-up Contact</label>
                       </div>
                       <input
                         type="text"
@@ -968,7 +968,7 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
                     {/* List of Saved Action Plans */}
                     {actionPlans.length > 0 && (
                       <div className="mt-8">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">Saved Action Plans</h3>
+                        <h3 className="text-base sm:text-lg md:text-2xl font-medium text-gray-900 mb-4">Saved Action Plans</h3>
                         <div className="space-y-4">
                           {actionPlans.map((plan, index) => (
                             <div
