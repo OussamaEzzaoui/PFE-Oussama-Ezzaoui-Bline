@@ -12,7 +12,7 @@ interface NavItem {
   children?: NavItem[];
 }
 
-export function Sidebar({ isOpen }: { isOpen: boolean }) {
+export function Sidebar({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
   const location = useLocation();
   const { isAdmin } = useAuth();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
@@ -153,6 +153,16 @@ export function Sidebar({ isOpen }: { isOpen: boolean }) {
         ${isOpen ? 'left-0' : '-left-[250px]'}
         min-w-0 overflow-x-hidden overflow-y-auto flex flex-col`}
     >
+      {/* Close Button */}
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 z-50 flex items-center justify-center w-10 h-10 rounded-full bg-white border border-gray-200 shadow-md hover:bg-red-50 hover:text-red-600 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-200"
+        aria-label="Close sidebar"
+        type="button"
+      >
+        <lucide.X className="h-6 w-6" />
+      </button>
+
       {/* Header */}
       <div className="flex flex-col items-center justify-center px-4 border-b border-gray-200 py-6">
         <img

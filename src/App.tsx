@@ -43,21 +43,17 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div>
       {/* Sidebar */}
-      <Sidebar isOpen={isSidebarOpen} />
-      {/* Toggle Button */}
-      <button
-        onClick={() => setIsSidebarOpen((open) => !open)}
-        className="fixed top-4 left-4 z-50 p-3 rounded-full bg-green-600 text-white shadow-lg hover:bg-green-700 transition-colors focus:outline-none"
-        aria-label={isSidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-        type="button"
-      >
-        {isSidebarOpen ? (
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-        ) : (
+      {isSidebarOpen && <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />}
+      {!isSidebarOpen && (
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          className="fixed top-4 left-4 z-50 p-3 rounded-full bg-green-600 text-white shadow-lg hover:bg-green-700 transition-colors focus:outline-none"
+          aria-label="Show sidebar"
+          type="button"
+        >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-        )}
-      </button>
-      {/* Main content */}
+        </button>
+      )}
       <main className={`main transition-all duration-300 ${isSidebarOpen ? 'ml-[250px]' : 'ml-0'}`}>{children}</main>
     </div>
   );
@@ -69,7 +65,6 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          
           <Route
             path="/"
             element={
@@ -80,7 +75,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
           <Route
             path="/reports/new"
             element={
@@ -91,7 +85,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-          
           <Route
             path="/reports/:id"
             element={
@@ -102,7 +95,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
           <Route
             path="/stats/monthly"
             element={
@@ -113,7 +105,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-          
           <Route
             path="/admin/*"
             element={
@@ -124,7 +115,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
           <Route
             path="/my-reports"
             element={
@@ -135,7 +125,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
           <Route
             path="/weekly-report"
             element={
@@ -146,7 +135,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
