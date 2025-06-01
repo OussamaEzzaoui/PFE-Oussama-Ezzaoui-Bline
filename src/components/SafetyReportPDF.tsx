@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Document, Page, Text, View, StyleSheet, Image, Font } from '@react-pdf/renderer';
 import { format } from 'date-fns';
 import type { SafetyCategory, Project, Company, ActionPlan } from '../lib/types';
+import { supabase } from '../lib/supabase';
 
 // Register fonts
 Font.register({
@@ -11,10 +12,6 @@ Font.register({
     { src: 'https://cdn.jsdelivr.net/npm/@fontsource/helvetica@4.5.0/files/helvetica-bold.woff2', fontWeight: 'bold' }
   ]
 });
-
-// Add image cache with TTL (Time To Live)
-const imageCache = new Map<string, { url: string; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 interface ImageUrls {
   main?: string;
@@ -152,6 +149,7 @@ interface SafetyReportPDFProps {
 
 export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
   const [imageUrls, setImageUrls] = useState<ImageUrls>({});
+  const [loadingError, setLoadingError] = useState<string | null>(null);
 
   // Memoize the formatted date and time
   const formattedDate = useMemo(() => 
@@ -175,31 +173,49 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
   );
 
   useEffect(() => {
-    const loadImages = async () => {
-      const urls: ImageUrls = {};
-      
-      // Load main image
-      if (report.supportingImage) {
-        const mainImageUrl = await loadImage(report.supportingImage, false);
-        if (mainImageUrl) {
-          urls.main = mainImageUrl;
-        }
-      }
+    let isMounted = true;
 
-      // Load action plan images
-      for (const plan of report.actionPlans) {
-        if (plan.supporting_image && plan.id) {
-          const planImageUrl = await loadImage(plan.supporting_image, true);
-          if (planImageUrl) {
-            urls[plan.id] = planImageUrl;
+    const loadImages = async () => {
+      try {
+        const urls: ImageUrls = {};
+        
+        // Load main image
+        if (report.supportingImage) {
+          const mainImageUrl = await getSignedUrl(report.supportingImage, false);
+          if (mainImageUrl && isMounted) {
+            urls.main = mainImageUrl;
+          } else if (isMounted) {
+            setLoadingError('Failed to load main image');
           }
         }
-      }
 
-      setImageUrls(urls);
+        // Load action plan images
+        for (const plan of report.actionPlans) {
+          if (plan.supporting_image && plan.id) {
+            const planImageUrl = await getSignedUrl(plan.supporting_image, true);
+            if (planImageUrl && isMounted) {
+              urls[plan.id] = planImageUrl;
+            } else if (isMounted) {
+              setLoadingError('Failed to load action plan image');
+            }
+          }
+        }
+
+        if (isMounted) {
+          setImageUrls(urls);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLoadingError('Error loading images');
+        }
+      }
     };
 
     loadImages();
+
+    return () => {
+      isMounted = false;
+    };
   }, [report]);
 
   const getStatusColor = (status: string) => {
@@ -231,16 +247,12 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
   const statusColors = getStatusColor(report.status);
   const consequencesColors = getConsequencesColor(report.consequences);
 
-  const loadImage = async (url: string, isActionPlan: boolean): Promise<string | null> => {
+  const getSignedUrl = async (url: string, isActionPlan: boolean): Promise<string | null> => {
     try {
-      // Check cache first
-      const cachedImage = imageCache.get(url);
-      if (cachedImage && Date.now() - cachedImage.timestamp < CACHE_TTL) {
-        return cachedImage.url;
+      if (!url) {
+        return null;
       }
 
-      let imageUrl = url;
-      
       // Handle base64 images
       if (url.startsWith('data:image')) {
         return url;
@@ -248,43 +260,38 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
 
       // Handle full URLs
       if (url.startsWith('http')) {
-        imageUrl = url;
-      } else {
-        // Construct Supabase URL with correct bucket
-        const bucket = isActionPlan ? 'action-plan-images' : 'safety-images';
-        imageUrl = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/${bucket}/${url}`;
+        return url;
       }
 
-      // Fetch and cache the image
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to load image: ${response.statusText}`);
+      // Get signed URL from Supabase
+      const bucket = isActionPlan ? 'action-plan-images' : 'safety-images';
+      const cleanPath = url.replace(/^\/+/, '');
+      
+      const { data: signedUrlData, error: signedUrlError } = await supabase
+        .storage
+        .from(bucket)
+        .createSignedUrl(cleanPath, 3600);
+
+      if (signedUrlError || !signedUrlData?.signedUrl) {
+        return null;
       }
 
-      const blob = await response.blob();
-      const base64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-
-      // Cache the result with timestamp
-      imageCache.set(url, { url: base64, timestamp: Date.now() });
-      return base64;
+      return signedUrlData.signedUrl;
     } catch (error) {
-      console.error('Error loading image:', error);
       return null;
     }
   };
 
-  const renderImage = (url: string, isActionPlan: boolean = false) => {
-    const imageUrl = url ? imageUrls[url] : imageUrls.main;
+  const renderImage = (lookupKey: string) => {
+    const imageUrl = imageUrls[lookupKey];
     
     if (!imageUrl) {
       return (
         <View style={styles.imageContainer}>
           <View style={styles.imagePlaceholder}>
-            <Text style={{ color: '#666666', fontSize: 10 }}>Image not available</Text>
+            <Text style={{ color: '#666666', fontSize: 10 }}>
+              {loadingError || 'Image not available'}
+            </Text>
           </View>
         </View>
       );
@@ -295,7 +302,6 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
         <Image
           src={imageUrl}
           style={styles.image}
-          cache={false}
         />
       </View>
     );
@@ -406,7 +412,7 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
         {report.supportingImage && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Supporting Image</Text>
-            {renderImage(report.supportingImage)}
+            {renderImage('main')}
           </View>
         )}
 
@@ -437,7 +443,7 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
                     </Text>
                   </View>
                 </View>
-                {plan.supporting_image && renderImage(plan.supporting_image, true)}
+                {plan.supporting_image && plan.id && renderImage(plan.id)}
               </View>
             ))}
           </View>

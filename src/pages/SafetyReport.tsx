@@ -30,6 +30,15 @@ interface SafetyReportProps {
   mode?: 'create' | 'view';
 }
 
+function sanitizeFilename(filename: string) {
+  return filename
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+    .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace special chars with underscore
+    .replace(/_{2,}/g, '_') // Replace multiple underscores with single
+    .toLowerCase();
+}
+
 export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
@@ -281,12 +290,26 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
       // Upload image if exists
       let imagePath = '';
       if (imageFile) {
-        const { data: imageData, error: imageError } = await supabase.storage
-          .from('safety-images')
-          .upload(`${Date.now()}-${imageFile.name}`, imageFile);
+        const sanitizedFileName = sanitizeFilename(imageFile.name);
+        const fileName = `${user.id}/${Date.now()}-${sanitizedFileName}`;
+        
+        try {
+          const { data: imageData, error: imageError } = await supabase.storage
+            .from('safety-images')
+            .upload(fileName, imageFile, {
+              cacheControl: '3600',
+              upsert: false
+            });
 
-        if (imageError) throw imageError;
-        imagePath = imageData.path;
+          if (imageError) {
+            console.error('Image upload error:', imageError);
+            throw new Error(`Failed to upload image: ${imageError.message}`);
+          }
+          imagePath = imageData.path;
+        } catch (uploadError) {
+          console.error('Image upload error:', uploadError);
+          throw new Error('Failed to upload image. Please try again with a different image.');
+        }
       }
 
       // Save observation
@@ -312,7 +335,10 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
         .select()
         .single();
 
-      if (observationError) throw observationError;
+      if (observationError) {
+        console.error('Observation save error:', observationError);
+        throw new Error(`Failed to save observation: ${observationError.message}`);
+      }
 
       // Save categories
       if (selectedCategories.length > 0) {
@@ -325,7 +351,10 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
             }))
           );
 
-        if (categoriesError) throw categoriesError;
+        if (categoriesError) {
+          console.error('Categories save error:', categoriesError);
+          throw new Error(`Failed to save categories: ${categoriesError.message}`);
+        }
       }
 
       // Save action plans
@@ -345,7 +374,10 @@ export function SafetyReport({ mode = 'view' }: SafetyReportProps) {
             }))
           );
 
-        if (actionPlansError) throw actionPlansError;
+        if (actionPlansError) {
+          console.error('Action plans save error:', actionPlansError);
+          throw new Error(`Failed to save action plans: ${actionPlansError.message}`);
+        }
       }
 
       // Get the full report data for PDF generation
