@@ -1,3 +1,9 @@
+// Add Buffer polyfill
+import { Buffer } from 'buffer';
+if (typeof window !== 'undefined') {
+  window.Buffer = Buffer;
+}
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Document, Page, Text, View, StyleSheet, Image, Font } from '@react-pdf/renderer';
 import { format } from 'date-fns';
@@ -183,7 +189,11 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
         if (report.supportingImage) {
           const mainImageUrl = await getSignedUrl(report.supportingImage, false);
           if (mainImageUrl && isMounted) {
-            urls.main = mainImageUrl;
+            // Convert to base64
+            const base64 = await fetchAndConvertToBase64(mainImageUrl);
+            if (base64) {
+              urls.main = base64;
+            }
           } else if (isMounted) {
             setLoadingError('Failed to load main image');
           }
@@ -194,7 +204,11 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
           if (plan.supporting_image && plan.id) {
             const planImageUrl = await getSignedUrl(plan.supporting_image, true);
             if (planImageUrl && isMounted) {
-              urls[plan.id] = planImageUrl;
+              // Convert to base64
+              const base64 = await fetchAndConvertToBase64(planImageUrl);
+              if (base64) {
+                urls[plan.id] = base64;
+              }
             } else if (isMounted) {
               setLoadingError('Failed to load action plan image');
             }
@@ -217,6 +231,24 @@ export function SafetyReportPDF({ report }: SafetyReportPDFProps) {
       isMounted = false;
     };
   }, [report]);
+
+  const fetchAndConvertToBase64 = async (url: string): Promise<string | null> => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        return null;
+      }
+
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      return null;
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
